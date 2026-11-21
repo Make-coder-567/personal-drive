@@ -253,17 +253,41 @@ async function adaptivePool(items, ctrl, worker) {
 
 // ---------- 鉴权 ----------
 async function init() {
-  const { data } = await cloud.auth.getSession();
-  if (data && data.user) { session = data; enterApp(); }
-  else showLogin();
+  let timer = null;
+  // Capacitor WebView 中先把登录页显示出来，再做后台会话检查。
+  // 即使 getSession 长时间无响应，也不会停在全部 hidden 的白屏状态。
+  const isCapacitorNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  if (isCapacitorNative) showLogin();
+  try {
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('会话检查超时（15 秒）')), 15000);
+    });
+    const { data } = await Promise.race([cloud.auth.getSession(), timeout]);
+    if (data && data.user) { session = data; enterApp(); }
+    else showLogin();
+  } catch (e) {
+    // WebView 中 getSession 可能因为 Cookie / localStorage / 会话失效抛错。
+    // 绝不能让页面停在全部 hidden 的白屏状态：退回登录页并展示可见错误。
+    console.error('[auth] getSession 失败：', e);
+    if (window.__driveBootError && typeof window.__driveBootError.append === 'function') {
+      window.__driveBootError.append('getSession 失败：' + ((e && (e.stack || e.message)) || e));
+    }
+    showLogin();
+    const msg = $('li-msg');
+    if (msg) msg.textContent = '会话检查失败，请重新登录：' + ((e && (e.message || e.code)) || e);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 function showLogin() {
+  const boot = $('boot-screen'); if (boot) boot.remove();
   $('login-view').classList.remove('hidden');
   $('app-view').classList.add('hidden');
   if ($('forgot-form')) { $('forgot-form').classList.add('hidden'); $('login-form').classList.remove('hidden'); $('tab-login').classList.add('active'); }
 }
 
 function enterApp() {
+  const boot = $('boot-screen'); if (boot) boot.remove();
   $('login-view').classList.add('hidden');
   $('app-view').classList.remove('hidden');
   $('user-email').textContent = session.user.email || session.user.id;

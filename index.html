@@ -7,6 +7,8 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>个人云盘</title>
+  <script src="src/boot-error.js"></script>
+  <script src="src/compat.js"></script>
   <script src="src/asset-code.js"></script>
   <script src="__config__.js"></script>
   <script src="src/config/runtime-config.js"></script>
@@ -20,6 +22,7 @@
   <script src="vendor/workbuddy-cloud-sdk.js"></script>
 </head>
 <body>
+  <div id="boot-screen" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--bg,#f5f7fa);color:var(--muted,#6b7685);font:14px/1.6 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif">正在加载个人云盘…</div>
   <!-- 公开接收视图（分享链接直达，无需登录） -->
   <section id="recipient-view" class="view hidden">
     <div class="login-card wide">

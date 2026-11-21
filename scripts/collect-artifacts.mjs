@@ -21,8 +21,21 @@ function copyReal(source, target) {
     console.log(`[collect] 已就位：${target}`);
     return;
   }
-  copyFileSync(source, target);
-  console.log(`[collect] ${source.replace(ROOT, '.')} → ${target.replace(ROOT, '.')} (${statSync(target).size} bytes)`);
+  let finalTarget = target;
+  try {
+    copyFileSync(source, finalTarget);
+  } catch (e) {
+    // Windows 下目标 EXE 正在运行时会被锁定；不要因此让整个构建失败，
+    // 改为输出 -next 副本并明确提示用户关闭旧程序后替换。
+    if (e && (e.code === 'EBUSY' || e.code === 'EPERM') && /\.exe$/i.test(target)) {
+      finalTarget = target.replace(/\.exe$/i, '-next.exe');
+      copyFileSync(source, finalTarget);
+      console.warn(`[collect] 目标被占用，已写入替代文件：${finalTarget.replace(ROOT, '.')}`);
+    } else {
+      throw e;
+    }
+  }
+  console.log(`[collect] ${source.replace(ROOT, '.')} → ${finalTarget.replace(ROOT, '.')} (${statSync(finalTarget).size} bytes)`);
 }
 
 function findFirst(dir, predicate) {

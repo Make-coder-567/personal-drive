@@ -35,6 +35,26 @@
 
 `python zipfile.testzip()` 对 APK 返回 `None`，且 `assets/public/index.html` 已包含 `runtime-config.js` 引用；`npm run check` 退出码 0。
 
+## 1.2 移动端白屏诊断加固（2026-11-21 18:xx）
+
+PC 端正常登录、Android WebView 白屏，说明配置正确但原生 WebView 初始化阶段存在等待或脚本异常。本轮新增：
+
+- `src/compat.js`：`crypto.randomUUID` 兼容垫片，覆盖旧版 WebView。
+- `src/boot-error.js`：全局 error / unhandledrejection 可视化浮层，异常直接显示在页面顶部。
+- `index.html`：`boot-screen` 启动提示，避免初始化期间纯白。
+- `app.js`：Capacitor 原生端先显示登录页，再后台检查会话；`getSession` 增加 15 秒超时与失败提示，绝不再停留在全部 hidden 的白屏状态。
+- `scripts/collect-artifacts.mjs`：目标 EXE 被占用时写入 `-next.exe` 替代文件，不再让构建整体失败。
+
+最新产物哈希（本节为最终值）：
+
+| 产物 | 大小 | SHA-256 |
+| --- | --- | --- |
+| `build/android/个人云盘-1.0.0-release-unsigned.apk` | 3,269,128 B | `eb39f70c62a3baa1a8e8a2cb896051a8839e37f3695a3c9678b9fbdc030605f8` |
+| `build/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe` | 121,514,758 B | `fb6a7abeded74d585d2cd48659469e987f3a46e70e095e4e8228186975cc235b` |
+| `build/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe` | 110,574,092 B | `4a1566e2cddfd5d9d5c3ac00e1ef6b2bd55c21aa98de685ebc7286cd5005829b` |
+
+APK 内已核验包含 `boot-error.js`、`compat.js`、`runtime-config.js`、`boot-screen` 与生产配置；ZIP 结构校验通过。若新 APK 仍异常，页面顶部会显示红色错误浮层，用户截图即可定位具体 WebView 错误。
+
 | 等级 | 数量 | 说明 |
 | --- | --- | --- |
 | 阻断（Blocker） | 0 | 无 |

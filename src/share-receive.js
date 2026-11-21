@@ -7,6 +7,8 @@
             // 多分片分享：公开下载，无需登录
             window.__SHARE_PAYLOAD__ = JSON.parse(raw);
             document.addEventListener('DOMContentLoaded', function () {
+              var bootScreen = document.getElementById('boot-screen');
+              if (bootScreen) bootScreen.remove();
               var lv = document.getElementById('login-view');
               var av = document.getElementById('app-view');
               var rv = document.getElementById('recipient-view');
