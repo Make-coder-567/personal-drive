@@ -46,9 +46,16 @@ function numberFromEnv(value, fallback, min, max) {
 
 function csv(value, fallback = []) {
   if (!value || !String(value).trim()) return fallback;
+  // 保留 CSP 关键字上的单引号：'self' / 'unsafe-inline' 等。
+  // 解析 .env 时会剥离包裹整个值的引号，这里对已知 CSP 关键字重新加回。
+  const keywords = new Set(["self", "unsafe-inline", "unsafe-eval", "none", "strict-dynamic"]);
   return String(value)
     .split(/\s+/)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((token) => {
+      const raw = token.replace(/^['"]|['"]$/g, "");
+      return keywords.has(raw) ? `'${raw}'` : raw;
+    });
 }
 
 function main() {

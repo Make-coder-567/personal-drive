@@ -4,7 +4,7 @@
  * 原生构建依赖本机 SDK（Android SDK/JDK、 Electron 二进制），缺失时明确报错，不伪造产物。
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,15 +54,21 @@ function main() {
   if (wantWindows) {
     nodeScript('gen-icon.mjs');
     const builder = resolve(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder');
-    // electron-builder 会删除旧的 win-unpacked 暂存目录；受限环境可能禁止批量删除，
-    // 这里改为重命名归档，让本次构建始终使用全新目录。
-    for (const name of ['win-unpacked', 'win-unpacked.tmp']) {
-      const staging = resolve(ROOT, 'build', 'windows', name);
-      if (existsSync(staging)) renameSync(staging, `${staging}-old-${Date.now()}`);
-    }
-    // 架构在 electron-builder.yml 的 win.target 中声明为 x64；CLI 不再传 x64（会被当成 target 名）
-    run('electron-builder', builder, ['--win']);
-    nodeScript('collect-artifacts.mjs', ['windows']);
+    // 每次构建使用独立输出目录，避免 win-unpacked / win-unpacked.tmp 被资源管理器
+    // 或正在运行的 EXE 锁定导致 EPERM；最终由 collect-artifacts 复制为约定文件名。
+    const stamp = String(Date.now());
+    const stagingRel = `build/windows/.stage-${stamp}`;
+    const stagingDir = resolve(ROOT, stagingRel);
+    const configTemplate = readFileSync(resolve(ROOT, 'electron-builder.yml'), 'utf8');
+    const stagedConfig = resolve(ROOT, '.electron-builder.stage.yml');
+    writeFileSync(
+      stagedConfig,
+      configTemplate.replace(/output:\s*[^\r\n]+/, `output: ${stagingRel}`),
+      'utf8',
+    );
+    // 架构在 win.target 中声明为 x64；CLI 不再传 x64（会被当成 target 名）
+    run('electron-builder', builder, ['--win', '-c', stagedConfig]);
+    run('collect-artifacts', process.execPath, [resolve(ROOT, 'scripts', 'collect-artifacts.mjs'), 'windows', stagingDir]);
   }
 
   console.log('\n[build-all] 完成。');

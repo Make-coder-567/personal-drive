@@ -52,7 +52,8 @@ function collectAndroid() {
 }
 
 function collectWindows() {
-  const output = resolve(ROOT, 'build', 'windows');
+  const sourceArg = process.argv[3] ? resolve(process.argv[3]) : '';
+  const output = sourceArg && existsSync(sourceArg) ? sourceArg : resolve(ROOT, 'build', 'windows');
   const suffix = isWindowsSigned() ? '' : '-unsigned';
   // 只从 electron-builder 原始产物复制；排除上次收集生成的 *-unsigned 副本，避免覆盖成旧包
   const setup = findFirst(output, (file) =>
@@ -60,8 +61,9 @@ function collectWindows() {
   // electron-builder 26 的 portable 产物名为 "<productName> <version>.exe"（无 portable 字样）
   const portable = findFirst(output, (file) =>
     file.toLowerCase().endsWith('.exe') && !/setup|uninstall|unsigned/i.test(file));
-  copyReal(setup, resolve(output, `个人云盘-${version}-win-x64-setup${suffix}.exe`));
-  copyReal(portable, resolve(output, `个人云盘-${version}-win-x64-portable${suffix}.exe`));
+  const finalDir = resolve(ROOT, 'build', 'windows');
+  copyReal(setup, resolve(finalDir, `个人云盘-${version}-win-x64-setup${suffix}.exe`));
+  copyReal(portable, resolve(finalDir, `个人云盘-${version}-win-x64-portable${suffix}.exe`));
 }
 
 if (platform === 'android') collectAndroid();
