@@ -19,8 +19,10 @@
   }
 
   function render() {
+    // 没有错误时绝不创建浮层，避免正常页面顶部出现空红色边框。
+    if (!buffer.length) return;
     var box = ensureBox();
-    if (box && buffer.length) box.textContent = '启动/运行错误（可截图反馈）：\n' + buffer.join('\n');
+    if (box) box.textContent = '启动/运行错误（可截图反馈）：\n' + buffer.join('\n');
   }
 
   function append(text) {

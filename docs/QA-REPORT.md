@@ -55,6 +55,23 @@ PC 端正常登录、Android WebView 白屏，说明配置正确但原生 WebVie
 
 APK 内已核验包含 `boot-error.js`、`compat.js`、`runtime-config.js`、`boot-screen` 与生产配置；ZIP 结构校验通过。若新 APK 仍异常，页面顶部会显示红色错误浮层，用户截图即可定位具体 WebView 错误。
 
+## 1.3 adb 实机排查结论（2026-11-21 19:36）
+
+- 设备 `HEW4YTYTWGVC7LHU`（PJG110）已授权，应用包 `com.workbuddy.personaldrive` 已安装。
+- 排查发现手机此前停留旧包：`lastUpdateTime=2026-11-21 19:09:10`，而修复版通过 adb 安装后变为 `19:20:18`，随后再次安装最终版。
+- 通过 adb 安装最终 APK 并启动后，实机截图 `docs/phone-final.png` 显示：登录页完整呈现，输入框、登录按钮、忘记密码入口均正常，红色错误浮层已消失。
+- 根因结论：先前移动端白屏不是配置错误，也不是 WebView 必然不兼容，而是**手机仍运行修复前的旧 APK**；新 Web 内核需要覆盖安装/卸载重装才会进入 WebView。当前最终包已通过 adb 实机验证。
+- logcat 抓取期间未发现应用自身的 `Uncaught` / `TypeError` / `ReferenceError` / `net::ERR_*` 错误；出现的 `JsConsole` 日志来自系统桌面 launcher，与本应用无关。
+- 修复后 `boot-error.js` 的错误浮层改为仅在实际发生错误时创建，避免正常页面顶部出现空红色边框。
+
+最终产物哈希（覆盖本节之前的哈希，以本表为准）：
+
+| 产物 | 大小 | SHA-256 |
+| --- | --- | --- |
+| `build/android/个人云盘-1.0.0-release-unsigned.apk` | 3,269,208 B | `ffb7b825667d8f0eadb4549c8ce948755e0194ec2d10d76e13358eb132f7864d` |
+| `build/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe` | 121,514,871 B | `3c1383a69c067e477e7e65a2087504c025a2b16ba4b0890c1544e91d4afc9d67` |
+| `build/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe` | 110,567,404 B | `6ab819959d2f62ee3ab881bca0c9984ec91fec0edae9a2397a815d76ca9de107` |
+
 | 等级 | 数量 | 说明 |
 | --- | --- | --- |
 | 阻断（Blocker） | 0 | 无 |
