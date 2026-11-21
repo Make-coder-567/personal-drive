@@ -83,7 +83,14 @@
   }
 
   function cancel(taskId) {
-    return invoke('cancel', { taskId: taskId }, taskId);
+    // preload 的 cancel(taskId) 接收字符串，内部再包装为 IPC payload
+    var api = bridge();
+    if (typeof api.cancel !== 'function') {
+      return Promise.reject(new global.NativeFsError(CODES.UNSUPPORTED, 'Electron 不支持 cancel', taskId, null));
+    }
+    return withTimeout(api.cancel(String(taskId)), taskId, 'cancel').catch(function (error) {
+      throw global.NativeFsWrapError(error, CODES.IO, taskId);
+    });
   }
 
   global.ElectronNativeFs = Object.freeze({

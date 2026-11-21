@@ -4,6 +4,7 @@
  * 原生构建依赖本机 SDK（Android SDK/JDK、 Electron 二进制），缺失时明确报错，不伪造产物。
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +21,7 @@ function run(label, command, commandArgs, options = {}) {
     cwd: options.cwd || ROOT,
     env: { ...process.env, ...(options.env || {}) },
     stdio: 'inherit',
-    shell: process.platform === 'win32' && command.endsWith('.cmd'),
+    shell: process.platform === 'win32' && (command.endsWith('.cmd') || command.endsWith('.bat')),
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${label} 失败（exit ${result.status}）`);
@@ -47,11 +48,21 @@ function main() {
     run('capacitor sync', cap, ['sync', 'android']);
     const gradlew = resolve(ROOT, 'android', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
     run('android assembleRelease', gradlew, ['assembleRelease'], { cwd: resolve(ROOT, 'android') });
+    nodeScript('collect-artifacts.mjs', ['android']);
   }
 
   if (wantWindows) {
+    nodeScript('gen-icon.mjs');
     const builder = resolve(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder');
-    run('electron-builder', builder, ['--win', 'x64']);
+    // electron-builder 会删除旧的 win-unpacked 暂存目录；受限环境可能禁止批量删除，
+    // 这里改为重命名归档，让本次构建始终使用全新目录。
+    for (const name of ['win-unpacked', 'win-unpacked.tmp']) {
+      const staging = resolve(ROOT, 'build', 'windows', name);
+      if (existsSync(staging)) renameSync(staging, `${staging}-old-${Date.now()}`);
+    }
+    // 架构在 electron-builder.yml 的 win.target 中声明为 x64；CLI 不再传 x64（会被当成 target 名）
+    run('electron-builder', builder, ['--win']);
+    nodeScript('collect-artifacts.mjs', ['windows']);
   }
 
   console.log('\n[build-all] 完成。');

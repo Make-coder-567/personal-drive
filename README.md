@@ -18,7 +18,7 @@
 
 - Web 内核：原生 HTML / CSS / JavaScript（**有构建步骤**，Vite 5 + esbuild 预处理 vendor）
 - 云服务：[WorkBuddy Cloud SDK](https://www.npmjs.com/package/@tencent-ai/workbuddy-cloud-sdk)（固定版本 `0.1.4`，本地 vendor + CDN 回退）
-- 打包：Capacitor 8（Android）、Electron 31 + electron-builder（Windows x64）
+- 打包：Capacitor 8.6.2（Android）、Electron 45.4.1 + electron-builder 26.18.0（Windows x64）
 - 依赖本地化：`public/vendor/workbuddy-cloud-sdk.js`、`public/vendor/client-zip.global.js`（后者暴露 `window.clientZip.downloadZip`）
 
 ## 快速开始
@@ -57,12 +57,14 @@ npm run dev                        # gen-config → vendor → vite dev server
 | `npm run gen:config` | `public/__config__.js` |
 | `npm run vendor` | `public/vendor/*` |
 | `npm run build:web` | `dist/`（含 `index.html`、`__config__.js`、`vendor/`） |
-| `npm run build:android` | `build/android/*.apk`（需本机 Android SDK/JDK 与 `cap add android` 生成的工程） |
-| `npm run build:win` | `build/windows/*.exe`（NSIS x64 + portable，需 Electron 二进制） |
+| `npm run build:android` | `build/android/个人云盘-1.0.0-release.apk`（有 keystore）或 `...-release-unsigned.apk`（debug 签名降级），需 Android SDK 36 + JDK 21 |
+| `npm run build:win` | `build/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe` 与 `...-portable-unsigned.exe`（无代码签名证书时） |
 | `npm run build:all` | Web + Android + Windows 全量构建 |
 | `npm run check` | 校验 Web 产物齐备与源码无硬编码密钥/域名/站点码 |
 
-Android 与 Windows 构建依赖本机工具链；缺失时脚本会明确报错，不会生成伪造的 APK/EXE。无 release keystore / 代码签名证书时只能产出内部测试包（Android debug 签名、Windows 未签名），正式分发前必须补齐签名材料。
+Android 与 Windows 构建依赖本机工具链；缺失时脚本会明确报错，不会生成伪造的 APK/EXE。无 release keystore / 代码签名证书时只能产出内部测试包（Android debug 签名、Windows 未签名，后者会触发 SmartScreen 提示），正式分发前必须补齐签名材料。
+
+本机 Android 工具链缺失（无 SDK 36、仅 JBR 25、Gradle Wrapper 下载受证书链阻断），工程源码完整但 APK 未生成；具体错误与修复命令见 [`docs/BUILD-BLOCKERS.md`](docs/BUILD-BLOCKERS.md)。Windows 未签名 NSIS/portable 已在上述路径实际产出。
 
 ## 目录结构
 

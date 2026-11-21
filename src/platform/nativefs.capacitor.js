@@ -5,7 +5,6 @@
   'use strict';
 
   var CODES = global.NativeFsErrorCodes;
-  var pluginPromise = null;
 
   function plugin() {
     var capacitor = global.Capacitor;

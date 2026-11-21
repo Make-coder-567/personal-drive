@@ -1,0 +1,31 @@
+appId: com.workbuddy.personaldrive
+productName: 个人云盘
+copyright: Copyright © 2026 个人云盘
+
+directories:
+  output: build/windows
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+win:
+  icon: electron/assets/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  artifactName: 个人云盘-${version}-win-x64-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# 无代码签名证书时产物改名为 -unsigned，由 scripts/collect-artifacts.mjs 统一整理。

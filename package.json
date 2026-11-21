@@ -2,7 +2,9 @@
   "name": "personal-drive",
   "version": "1.0.0",
   "private": true,
+  "author": "个人云盘",
   "description": "个人云盘：一套 Web 内核输出到 Web / Android / Windows 三端",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "node scripts/build-all.mjs --dev",
     "gen:config": "node scripts/gen-config.mjs",
@@ -21,12 +23,13 @@
   "devDependencies": {
     "@capacitor/android": "8.6.2",
     "@capacitor/cli": "8.6.2",
-    "electron": "31.7.7",
-    "electron-builder": "24.13.3",
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
     "esbuild": "0.24.2",
+    "typescript": "5.9.3",
     "vite": "5.4.21"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   }
 }
