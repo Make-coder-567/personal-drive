@@ -1,0 +1,9 @@
+# WorkBuddy 本地会话/记忆数据，含内部调试信息，不应公开
+.workbuddy/
+*.genie
+
+# 依赖与系统文件
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
