@@ -297,6 +297,7 @@ interface SavePartsRequest {
 | `nativefs:pick-save-path` | invoke | `{ suggestedName?, filters? }` | `{ canceled: boolean, filePath?: string, name?: string }` |
 | `nativefs:pick-folder` | invoke | `{}` | `{ canceled: boolean, filePath?: string }` |
 | `nativefs:save-parts` | invoke | `{ target, parts:[{url, headers?, size?}], totalSize, taskId }` | `SaveResult { path, bytesWritten, canceled }` |
+| `nativefs:read-file-slice` | invoke | `{ path, offset, length }` | `Uint8Array`（结构化克隆字节数组，主进程按 path-guard 校验路径） |
 | `nativefs:cancel` | invoke | `{ taskId }` | `{ ok: boolean }` |
 | `nativefs:app-info` | invoke | `{}` | `{ platform:'electron', version, appName, osVersion }` |
 | `nativefs:open-external` | invoke | `{ url }` | `{ ok: boolean }`（主进程校验 URL 白名单） |

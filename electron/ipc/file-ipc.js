@@ -1,8 +1,9 @@
 /* IPC handlers：渲染层只通过 preload 白名单调用这些 channel。 */
 const { app, dialog, ipcMain, shell } = require('electron');
+const fsp = require('node:fs/promises');
 const os = require('node:os');
 const writer = require('../file/download-writer');
-const { resolveTarget, isAllowedExternalUrl } = require('../file/path-guard');
+const { resolveTarget, isAllowedExternalUrl, validateReadPath } = require('../file/path-guard');
 
 function ipcError(code, message, cause) {
   const error = new Error(message);
@@ -55,6 +56,27 @@ function registerIpc(getWindow) {
     return writer.streamParts({ ...request, taskId }, onProgress);
   });
 
+  ipcMain.handle('nativefs:read-file-slice', async (_event, payload = {}) => {
+    const filePath = validateReadPath(payload.path);
+    const offset = Number(payload.offset);
+    const length = Number(payload.length);
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(length) || length <= 0 || length > 256 * 1024 * 1024) {
+      throw ipcError('E_NATIVEFS_INVALID_PATH', 'offset/length 非法（length 需在 1B~256MB 之间）');
+    }
+    let handle = null;
+    try {
+      handle = await fsp.open(filePath, 'r');
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, offset);
+      return new Uint8Array(buffer.subarray(0, bytesRead));
+    } catch (error) {
+      if (error && error.code && String(error.code).startsWith('E_NATIVEFS_')) throw error;
+      throw ipcError('E_NATIVEFS_IO', error && error.message ? error.message : String(error), error);
+    } finally {
+      if (handle) await handle.close();
+    }
+  });
+
   ipcMain.handle('nativefs:cancel', async (_event, payload = {}) => {
     return { ok: writer.cancel(payload.taskId) };
   });
@@ -80,6 +102,7 @@ function disposeIpc() {
     'nativefs:pick-save-path',
     'nativefs:pick-folder',
     'nativefs:save-parts',
+    'nativefs:read-file-slice',
     'nativefs:cancel',
     'nativefs:app-info',
     'nativefs:open-external',

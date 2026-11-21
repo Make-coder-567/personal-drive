@@ -8,6 +8,16 @@ contextBridge.exposeInMainWorld('electronNativeFs', {
 
   saveParts: (request) => ipcRenderer.invoke('nativefs:save-parts', request || {}),
 
+  /** 按偏移量读取本地文件片段，返回可结构化克隆的 Uint8Array。 */
+  readFileSlice: (request) => {
+    const req = request || {};
+    return ipcRenderer.invoke('nativefs:read-file-slice', {
+      path: String(req.path || ''),
+      offset: Number(req.offset) || 0,
+      length: Number(req.length) || 0,
+    });
+  },
+
   cancel: (taskId) => ipcRenderer.invoke('nativefs:cancel', { taskId: String(taskId) }),
 
   getAppInfo: () => ipcRenderer.invoke('nativefs:app-info', {}),

@@ -67,4 +67,25 @@ function resolveTarget(target) {
   return resolved;
 }
 
-module.exports = { isAllowedExternalUrl, validatePartUrl, resolveTarget };
+/**
+ * 校验本地读取路径。可用 ELECTRON_ALLOWED_READ_ROOTS（分号/逗号分隔）限制可读根目录；
+ * 未配置时允许绝对路径（与用户通过原生对话框自选保存位置的模型一致）。
+ */
+function validateReadPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath || rawPath.indexOf('\0') !== -1) {
+    throw Object.assign(new Error('读取路径非法'), { code: 'E_NATIVEFS_INVALID_PATH' });
+  }
+  const resolved = path.resolve(rawPath);
+  const roots = String(process.env.ELECTRON_ALLOWED_READ_ROOTS || '')
+    .split(/[;,]/)
+    .map((root) => root.trim())
+    .filter(Boolean)
+    .map((root) => path.resolve(root));
+  const allowed = roots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
+  if (roots.length && !allowed) {
+    throw Object.assign(new Error('读取路径不在白名单目录内'), { code: 'E_NATIVEFS_INVALID_PATH' });
+  }
+  return resolved;
+}
+
+module.exports = { isAllowedExternalUrl, validatePartUrl, resolveTarget, validateReadPath };
