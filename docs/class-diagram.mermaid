@@ -1,0 +1,191 @@
+classDiagram
+    %% ============ 配置与运行时数据模型 ============
+    class RuntimeConfig {
+        +string appName
+        +string version
+        +string endpoint
+        +string oauthRelayBaseUrl
+        +string publishableKey
+        +string defaultSiteCode
+        +string shareBaseUrl
+        +string swUrl
+        +Platform platform
+        +get() RuntimeConfig
+        +shareUrl(payload) string
+    }
+
+    class AppInfo {
+        +Platform platform
+        +string version
+        +string appName
+        +string osVersion
+    }
+
+    class SaveTarget {
+        +string uri
+        +string name
+        +string displayName
+    }
+
+    class SavePartSource {
+        +string url
+        +Object~string,string~ headers
+        +number size
+    }
+
+    class SavePartsRequest {
+        +SaveTarget target
+        +SavePartSource[] parts
+        +number totalSize
+        +string taskId
+        +boolean overwrite
+        +onProgress(written, total) void
+    }
+
+    class SaveResult {
+        +string path
+        +number bytesWritten
+        +boolean canceled
+    }
+
+    class NativeFsError {
+        +string code
+        +string message
+        +any cause
+        +string taskId
+    }
+
+    class SharePayload {
+        +string type
+        +string name
+        +number size
+        +string[] parts
+        +ShareFileItem[] files
+        +string url
+    }
+
+    class ShareFileItem {
+        +string name
+        +string relPath
+        +number size
+        +string[] parts
+    }
+
+    %% ============ 平台适配接口与实现 ============
+    class NativeFs {
+        <<interface>>
+        +pickSavePath(opts) Promise~SaveTarget~
+        +saveParts(req) Promise~SaveResult~
+        +pickFolder() Promise~SaveTarget~
+        +readFileSlice(req) Promise~Uint8Array~
+        +openExternal(url) Promise~void~
+        +getAppInfo() Promise~AppInfo~
+        +cancel(taskId) Promise~void~
+    }
+
+    class WebNativeFs {
+        -FileSystemWritableFileStream writable
+        +pickSavePath(opts) Promise~SaveTarget~
+        +saveParts(req) Promise~SaveResult~
+        +fallbackBlob(req) Promise~SaveResult~
+    }
+
+    class ElectronNativeFs {
+        -ElectronIpcBridge ipc
+        +pickSavePath(opts) Promise~SaveTarget~
+        +saveParts(req) Promise~SaveResult~
+        +openExternal(url) Promise~void~
+    }
+
+    class CapacitorNativeFs {
+        -NativeFsPlugin plugin
+        +pickSavePath(opts) Promise~SaveTarget~
+        +saveParts(req) Promise~SaveResult~
+        +pickFolder() Promise~SaveTarget~
+    }
+
+    class PlatformRuntime {
+        -RuntimeConfig config
+        -NativeFs nativeFs
+        +Platform platform
+        +init(win) void
+        +getConfig() RuntimeConfig
+        +getShareBaseUrl() string
+        +getSwUrl() string
+        +getNativeFs() NativeFs
+    }
+
+    %% ============ 现有内核（全局约定，IIFE） ============
+    class CloudSdk {
+        <<global window.WorkBuddyCloud>>
+        +createWorkBuddyCloud(config) CloudClient
+    }
+
+    class DriveBridge {
+        <<global window.__driveBridge>>
+        +cloud() CloudClient
+        +session() Session
+        +meta() Meta
+        +partPaths(f) string[]
+    }
+
+    class Accel {
+        <<global window.Accel>>
+        +addDownloadTask(file) void
+        +addFolderDownloadTasks(folder) void
+    }
+
+    %% ============ 原生宿主 ============
+    class ElectronIpcBridge {
+        <<preload contextBridge: window.electronNativeFs>>
+        +pickSavePath(opts) Promise~SaveTarget~
+        +saveParts(req) Promise~SaveResult~
+        +onProgress(taskId, cb) void
+        +openExternal(url) Promise~void~
+    }
+
+    class ElectronMain {
+        +registerIpcHandlers() void
+        +streamDownloadToDisk(req) Promise~SaveResult~
+        +createWindow() void
+        +enforceSecurityPolicy() void
+    }
+
+    class CapacitorNativePlugin {
+        <<Java @CapacitorPlugin NativeFsPlugin>>
+        +pickSavePath(PluginCall call) void
+        +saveParts(PluginCall call) void
+        +pickFolder(PluginCall call) void
+        +cancel(PluginCall call) void
+        +getAppInfo(PluginCall call) void
+    }
+
+    class MainActivity {
+        +registerPlugin(NativeFsPlugin) void
+    }
+
+    %% ============ 关系 ============
+    PlatformRuntime "1" --> "1" RuntimeConfig : holds
+    PlatformRuntime "1" --> "1" NativeFs : selects
+    PlatformRuntime ..> SharePayload : builds share urls
+
+    NativeFs <|.. WebNativeFs : implements
+    NativeFs <|.. ElectronNativeFs : implements
+    NativeFs <|.. CapacitorNativeFs : implements
+
+    ElectronNativeFs --> ElectronIpcBridge : calls
+    ElectronIpcBridge --> ElectronMain : IPC invoke/send
+    ElectronMain "1" --> "1..*" SavePartSource : streams to disk
+
+    CapacitorNativeFs --> CapacitorNativePlugin : Capacitor.Plugins
+    MainActivity --> CapacitorNativePlugin : registerPlugin
+
+    SavePartsRequest "1" --> "1" SaveTarget : target
+    SavePartsRequest "1" --> "1..*" SavePartSource : parts
+    SavePartsRequest ..> NativeFsError : may reject with
+    SaveResult ..> AppInfo : getAppInfo returns
+
+    DriveBridge --> CloudSdk : wraps single instance
+    DriveBridge --> NativeFs : native download path
+    Accel --> DriveBridge : reuses via window.__driveBridge
+    SharePayload "1" --> "0..*" ShareFileItem : folder files

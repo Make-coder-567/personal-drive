@@ -8,16 +8,21 @@ if (!window.WorkBuddyCloud) {
   }
   throw new Error('WorkBuddyCloud SDK 未加载');
 }
+// 配置由构建期 __config__.js 注入，运行时可被 __DRIVE_CONFIG_RUNTIME__ 覆盖；源码零硬编码。
+const runtimeConfig = window.RuntimeConfig.get();
 const publicConfig = {
-  endpoint: "https://personal-drive-52476.app.workbuddy.host",
-  oauthRelayBaseUrl: "https://www.workbuddy.cn/v2/as/genie-baas/oauth",
-  publishableKey: "wbpk_Iu0SO5ZWbqML8CbU1Hz35W_zm8xsq02TBIxI1HqAunOT1J5ZILym1qb",
+  endpoint: runtimeConfig.endpoint || '',
+  oauthRelayBaseUrl: runtimeConfig.oauthRelayBaseUrl || '',
+  publishableKey: runtimeConfig.publishableKey || '',
 };
+if (!publicConfig.endpoint || !publicConfig.publishableKey) {
+  console.warn('[config] endpoint / publishableKey 未注入，请检查构建环境变量。');
+}
 
-const cloud = WorkBuddyCloud.createWorkBuddyCloud(publicConfig);
+const cloud = window.WorkBuddyCloud.createWorkBuddyCloud(publicConfig);
 
 // 平台站点访问码（部署链接 ?sharecode=...）：分享链接必须带上，接收方才能公开打开
-const DEFAULT_SITE_CODE = 'PBCKY4YAA5';
+const DEFAULT_SITE_CODE = runtimeConfig.defaultSiteCode || '';
 let SITE_CODE = DEFAULT_SITE_CODE;
 try {
   const sp = new URLSearchParams(location.search);
@@ -34,7 +39,7 @@ let CHUNK_SIZE = CHUNK_MB * 1024 * 1024;    // 分片大小（默认 8MB；越�
 let UPLOAD_CTRL = makeCtrl(UPLOAD_CONC, 2, Math.max(12, UPLOAD_CONC), 10);
 let DOWNLOAD_CTRL = makeCtrl(6, 2, 12, 8);
 const DOWNLOAD_CONC_START = 6;
-const APP_VERSION = 'v2026-11-19-forgot';  // 版本号：显示在标签页标题，用于确认是否加载到最新代码
+const APP_VERSION = 'v' + (runtimeConfig.version || '1.0.0');  // 版本号来自 package.json，经构建期配置注入
 const PREVIEW_MAX = 50 * 1024 * 1024;      // 预览仅支持 <50MB
 const SHARE_TTL = 3600;                    // 签名链接最长 1 小时
 
@@ -1123,9 +1128,65 @@ function combineStreams(paths) {
     },
   });
 }
+// 原生端落盘：只把分片 URL 描述交给宿主，渲染层不持有整文件字节；失败/不支持时回退原 Web 路径。
+async function nativeSaveFile(f, suggested) {
+  const nf = window.NativeFs;
+  if (!nf || typeof nf.pickSavePath !== 'function' || typeof nf.saveParts !== 'function') return false;
+  const taskId = uid();
+  ensureTasks();
+  const sig = { cancelled: false };
+  const task = addTask('下载：' + f.name, () => {
+    sig.cancelled = true;
+    status.textContent = '正在取消…';
+    Promise.resolve(nf.cancel(taskId)).catch(() => {});
+  });
+  const status = task.querySelector('.tstatus');
+  const bar = task.querySelector('.tbar > i');
+  const started = Date.now();
+  const etaTrack = makeEtaTracker(f.size || 0);
+  status.textContent = '准备中…';
+  try {
+    const target = await nf.pickSavePath({ suggestedName: suggested });
+    if (!target || target.canceled) throw Object.assign(new Error('已取消'), { code: 'E_NATIVEFS_CANCEL' });
+    const paths = partPaths(f);
+    let urls;
+    try { urls = await withTimeout(createSignedUrlsBatch(paths, 3600), 60000, '批量签名'); }
+    catch (e) { urls = paths.map(publicUrlFor); }
+    if (!urls || urls.length !== paths.length || urls.some((u) => !u)) throw new Error('无法生成原生下载链接');
+    status.textContent = '原生写入中…';
+    await nf.saveParts({
+      target: target,
+      parts: urls.map((u) => ({ url: u })),
+      totalSize: f.size || 0,
+      taskId: taskId,
+      onProgress: (written, total) => {
+        const shownTotal = Number(total) || f.size || 0;
+        const r = etaTrack(written);
+        const secs = Math.max(0.001, (Date.now() - started) / 1000);
+        const speedMBs = (r.speed > 0 ? r.speed : written / secs) / 1048576;
+        bar.style.width = Math.min(100, (written / Math.max(1, shownTotal)) * 100) + '%';
+        status.textContent = fmtSize(written) + ' / ' + fmtSize(shownTotal) + ' · ' + speedMBs.toFixed(1) + ' MB/s · ' + fmtEta(r.eta);
+      },
+    });
+    bar.style.width = '100%';
+    status.textContent = '完成 · ' + fmtSize(f.size || 0);
+    const cb = task.querySelector('.tcancel'); if (cb) cb.remove();
+    return true;
+  } catch (e) {
+    if (sig.cancelled || (e && (e.code === 'E_NATIVEFS_CANCEL' || e.name === 'AbortError'))) {
+      status.textContent = '已取消';
+      const cb = task.querySelector('.tcancel'); if (cb) cb.remove();
+      return true;
+    }
+    status.textContent = '原生下载失败，回退网页路径：' + ((e && e.message) || e);
+    return false;
+  }
+}
+
 async function downloadFile(f) {
   const paths = partPaths(f);
   const suggested = f.name;
+  if (await nativeSaveFile(f, suggested)) return;
   // 主路径：File System Access API 边下边写磁盘；并行拉取、按序写盘，内存只保留少量分片。
   if (window.showSaveFilePicker) {
     let handle;
@@ -1431,7 +1492,7 @@ async function shareItems(items, displayName) {
     const murl = usePublic ? publicUrlFor(mkey) : await withTimeout(createSignedUrlAny(mkey, ttl), 15000, '生成清单链接');
     if (!murl) throw new Error('清单链接生成失败');
     const codeParam = SITE_CODE ? ('&sharecode=' + encodeURIComponent(SITE_CODE)) : '';
-    urlEl.value = location.origin + '/?s=' + b64encodeUrl(JSON.stringify({ type: 'manifest', url: murl })) + codeParam;
+    urlEl.value = window.RuntimeConfig.getShareBaseUrl() + '/?s=' + b64encodeUrl(JSON.stringify({ type: 'manifest', url: murl })) + codeParam;
     if (usePublic) {
       $('share-msg').textContent = '已使用公开直链（长期有效）。' + ttlNote;
     } else {
@@ -1463,16 +1524,85 @@ function collectFolderFiles(folderId, basePath) {
   return out;
 }
 async function loadDownloadZip() {
-  const mod = await import('https://cdn.jsdelivr.net/npm/client-zip@2/+esm');
-  return mod.downloadZip;
+  if (window.clientZip && typeof window.clientZip.downloadZip === 'function') {
+    return window.clientZip.downloadZip;
+  }
+  throw new Error('本地打包依赖 clientZip 未加载（public/vendor/client-zip.global.js 缺失）');
 }
 function filePartsCount(f) { return f.chunkCount || Math.max(1, Math.ceil(f.size / CHUNK_SIZE)); }
 function fileKeys(f) { const n = filePartsCount(f); const keys = []; for (let i = 0; i < n; i++) keys.push(filePath(f, i)); return keys; }
+
+// 原生端文件夹落盘：选择一次目标目录，逐文件流式写入；relativePath 由宿主用于保留目录结构。
+async function nativeSaveFolder(folder, items, total) {
+  const nf = window.NativeFs;
+  if (!nf || typeof nf.pickFolder !== 'function' || typeof nf.saveParts !== 'function') return false;
+  const taskId = uid();
+  ensureTasks();
+  const sig = { cancelled: false };
+  const task = addTask('下载文件夹：' + folder.name, () => {
+    sig.cancelled = true;
+    status.textContent = '正在取消…';
+    Promise.resolve(nf.cancel(taskId)).catch(() => {});
+  });
+  const status = task.querySelector('.tstatus');
+  const bar = task.querySelector('.tbar > i');
+  const started = Date.now();
+  const etaTrack = makeEtaTracker(total);
+  status.textContent = '准备中…';
+  let written = 0;
+  try {
+    const target = await nf.pickFolder();
+    if (!target || target.canceled) throw Object.assign(new Error('已取消'), { code: 'E_NATIVEFS_CANCEL' });
+    for (const it of items) {
+      if (sig.cancelled) throw Object.assign(new Error('已取消'), { code: 'E_NATIVEFS_CANCEL' });
+      const paths = partPaths(it.file);
+      let urls;
+      try { urls = await withTimeout(createSignedUrlsBatch(paths, 3600), 60000, '批量签名'); }
+      catch (e) { urls = paths.map(publicUrlFor); }
+      if (!urls || urls.length !== paths.length || urls.some((u) => !u)) {
+        throw new Error('文件“' + it.relPath + '”的下载链接生成失败');
+      }
+      const fileTarget = Object.assign({}, target, {
+        relativePath: it.relPath,
+        name: String(it.relPath).split('/').pop(),
+      });
+      let fileWritten = 0;
+      await nf.saveParts({
+        target: fileTarget,
+        parts: urls.map((u) => ({ url: u })),
+        totalSize: it.file.size || 0,
+        taskId: taskId,
+        onProgress: (w) => {
+          written += Math.max(0, Number(w) - fileWritten);
+          fileWritten = Number(w) || 0;
+          const r = etaTrack(written);
+          const secs = Math.max(0.001, (Date.now() - started) / 1000);
+          const speedMBs = (r.speed > 0 ? r.speed : written / secs) / 1048576;
+          bar.style.width = Math.min(100, (written / Math.max(1, total)) * 100) + '%';
+          status.textContent = '原生写入 ' + it.relPath + ' · ' + fmtSize(written) + ' / ' + fmtSize(total) + ' · ' + speedMBs.toFixed(1) + ' MB/s · ' + fmtEta(r.eta);
+        },
+      });
+    }
+    bar.style.width = '100%';
+    status.textContent = '完成 · ' + fmtSize(total);
+    const cb = task.querySelector('.tcancel'); if (cb) cb.remove();
+    return true;
+  } catch (e) {
+    if (sig.cancelled || (e && (e.code === 'E_NATIVEFS_CANCEL' || e.name === 'AbortError'))) {
+      status.textContent = '已取消（已保留部分文件）';
+      const cb = task.querySelector('.tcancel'); if (cb) cb.remove();
+      return true;
+    }
+    status.textContent = '原生下载失败，回退网页路径：' + ((e && e.message) || e);
+    return false;
+  }
+}
 
 async function downloadFolder(folder) {
   const items = collectFolderFiles(folder.id, folder.name);
   if (!items.length) { alert('该文件夹为空。'); return; }
   const total = items.reduce((s, it) => s + (it.file.size || 0), 0);
+  if (await nativeSaveFolder(folder, items, total)) return;
   if (!window.showSaveFilePicker && total > 800 * 1024 * 1024) {
     alert('文件夹较大（' + fmtSize(total) + '），当前浏览器不支持流式落盘。请使用 Chrome 或 Edge 下载。');
     return;
@@ -1945,6 +2075,8 @@ window.__driveBridge = {
   saveMeta, render, partPaths, listKeys,
   createSignedUrlsBatch, getBlob, getStream, collectFolderFiles,
   pickUploadFolder,
+  config: () => window.RuntimeConfig.get(),
+  nativeFs: () => window.NativeFs,
 };
 
 // 文件/文件夹卡片「⚡ 加速」入口：统一转发给加速器；未加载时静默回退到原生下载。

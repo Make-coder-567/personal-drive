@@ -1,0 +1,121 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant IDX as index.html / PlatformRuntime
+    participant CFG as __config__.js + RuntimeConfig
+    participant APP as app.js (业务内核)
+    participant SDK as window.WorkBuddyCloud (SDK)
+    participant NF as NativeFs (平台适配门面)
+    participant HOST as 原生宿主 (Electron 主进程 / Android 插件)
+    participant REC as share-receive.js (接收页)
+    participant SW as sw.js (仅 Web)
+
+    %% ===== 启动与配置注入 =====
+    rect rgb(235, 244, 255)
+    Note over IDX,CFG: 启动 / 配置注入（三端一致，classic script 顺序加载）
+    IDX->>CFG: 加载 __config__.js → window.__DRIVE_CONFIG__
+    IDX->>IDX: asset-code.js → window.__ASSET_CODE__
+    IDX->>IDX: platform-runtime.js → PlatformRuntime.init()
+    PlatformRuntime->>CFG: get() 合并 运行时覆盖 > 构建注入 > 默认值
+    PlatformRuntime->>NF: 依据 config.platform 选择 Web/Electron/Capacitor 实现
+    IDX->>SDK: 本地 vendor 加载 @tencent-ai/workbuddy-cloud-sdk
+    IDX->>APP: 加载 app.js（恢复 window.__driveBridge）
+    APP->>CFG: publicConfig ← RuntimeConfig.get()
+    APP->>APP: SITE_CODE ← runtime config defaultSiteCode
+    end
+
+    %% ===== 登录 =====
+    rect rgb(240, 255, 240)
+    Note over U,SDK: 登录 → 列目录
+    U->>APP: 输入邮箱/密码，点击登录
+    APP->>SDK: auth.signIn(email, password)
+    SDK-->>APP: session (user.id / token)
+    APP->>APP: window.__driveBridge.session() 更新；保存 meta
+    APP->>SDK: storage.list(userPath(user.id,'meta.json'))
+    SDK-->>APP: 元数据 meta（文件/文件夹树）
+    APP->>APP: render() 渲染文件列表
+    end
+
+    %% ===== 上传分片 =====
+    rect rgb(255, 250, 235)
+    Note over U,SDK: 上传（分片并发 + 断点续传，逻辑不变）
+    U->>APP: 拖拽/选择文件
+    APP->>APP: 按 CHUNK_SIZE 切片，计算 partPaths
+    loop 每个分片（受 UPLOAD_CTRL 并发限制）
+        APP->>SDK: storage.upload(partPath, chunk)
+        SDK-->>APP: 成功/重试
+    end
+    APP->>SDK: storage.upload(metaPath, 更新后的 meta.json)
+    end
+
+    %% ===== 下载单文件：平台分流（核心） =====
+    rect rgb(255, 240, 245)
+    Note over U,HOST: 下载单文件 / 文件夹（原生流式落盘为 P0 重点）
+    U->>APP: 点击下载（文件/文件夹）
+    alt platform = web（FSAPI 可用）
+        APP->>NF: saveParts({target, parts, onProgress})
+        NF->>U: showSaveFilePicker() 选择保存位置
+        U-->>NF: FileSystemWritableFileStream
+        loop 每个分片（按序写盘，缓冲上限 BUF_CAP）
+            NF->>SDK: 拉取分片流（签名 URL）
+            SDK-->>NF: 分片字节流
+            NF->>NF: writable.write(chunk)；onProgress 更新 UI
+        end
+        NF->>NF: writable.close()
+    else platform = web（无 FSAPI，回退 SW/Blob）
+        APP->>NF: saveParts() → fallback
+        NF->>SW: postMessage set-download + 注册 swUrl
+        SW->>SW: ReadableStream 逐分片 fetch + 拼接
+        NF->>U: 打开 getSwUrl()+/__dl__/token 触发原生下载
+    else platform = electron
+        APP->>NF: saveParts({target, parts:[{url,headers}], taskId})
+        NF->>HOST: ipc invoke nativefs:save-start / save-parts（URL 列表）
+        HOST->>U: dialog.showSaveDialog() 选择保存位置
+        U-->>HOST: filePath
+        loop 每个分片（主进程流式下载，不经渲染层）
+            HOST->>HOST: https.get(part.url, headers) → createWriteStream({flags:'a'})
+            HOST-->>NF: ipc send nativefs:progress {taskId, written, total}
+            NF->>APP: onProgress → 更新进度条
+        end
+        HOST-->>NF: ipc result SaveResult {path, bytesWritten}
+    else platform = android (Capacitor)
+        APP->>NF: saveParts({target, parts:[{url,headers}], taskId})
+        NF->>HOST: Capacitor.Plugins.NativeFs.saveParts()
+        HOST->>U: ACTION_CREATE_DOCUMENT / ACTION_OPEN_DOCUMENT_TREE（SAF）
+        U-->>HOST: 目标 Uri（content://）
+        loop 每个分片（插件线程流式下载，不经 JS 内存）
+            HOST->>HOST: HttpURLConnection(part.url) → ContentResolver.openOutputStream(uri,'wa')
+            HOST-->>NF: notifyListeners('progress', {taskId, written, total})
+            NF->>APP: onProgress → 更新进度条
+        end
+        HOST-->>NF: SaveResult {path, bytesWritten}
+    end
+    APP->>U: 展示「完成 · 已写盘」
+    end
+
+    %% ===== 生成分享 =====
+    rect rgb(245, 240, 255)
+    Note over U,SDK: 生成分享链接（分享基址解耦）
+    U->>APP: 点击分享
+    APP->>SDK: 为每个分片创建签名 URL（或公开直链）
+    APP->>SDK: upload(shares/<mid>.json, manifest)
+    APP->>CFG: shareBaseUrl = RuntimeConfig.getShareBaseUrl()
+    APP->>APP: url = shareBaseUrl + '/?s=' + b64(payload) + '&sharecode=' + SITE_CODE
+    APP-->>U: 复制分享链接
+    end
+
+    %% ===== 接收页下载 =====
+    rect rgb(235, 255, 250)
+    Note over U,SW: 接收页免登录下载（DOM 与流程不变）
+    U->>REC: 打开分享链接 ?s=...&sharecode=...
+    REC->>REC: 解析 payload → renderRecipient()
+    U->>REC: 点击下载
+    alt 多分片 + HTTPS（走 SW）
+        REC->>SW: register(getSwUrl()) + postMessage set-download
+        SW->>SW: 逐分片 fetch + ReadableStream
+        REC->>U: 打开 getSwUrl()+/__dl__/token
+    else 单文件/小文件
+        REC->>REC: rcDirectUrl() 加 download 参数
+        REC->>U: location.href = 直链（浏览器下载管理器）
+    end
+    end

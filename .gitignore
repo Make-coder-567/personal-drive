@@ -7,3 +7,34 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# 构建产物
+dist/
+build/
+public/__config__.js
+public/vendor/
+.vite/
+
+# 环境变量：只提交样例
+.env
+.env.*
+!.env.example
+
+# 签名材料（绝不入库）
+*.jks
+*.keystore
+*.p12
+*.pfx
+android/keystore/
+electron/certs/
+
+# Android / Capacitor 本地文件
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+android/captures/
+android/.idea/
+
+# Electron 打包缓存
+electron-builder.yml.local

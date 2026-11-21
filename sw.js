@@ -4,12 +4,19 @@
  * 只拦截 /__dl__/<token>，其余请求一律放行。
  */
 const downloads = new Map();
+// 下载拦截前缀：可由宿主/页面注入 __DRIVE_DL_PREFIX__（浏览器中等价于 window.__DRIVE_DL_PREFIX__），
+// 页面也会在 set-download 消息中透传 RuntimeConfig.downloadPrefix；缺省仍为 /__dl__/ 以保持 Web 兼容。
+let dlPrefix =
+  self.__DRIVE_DL_PREFIX__ ||
+  (self.__DRIVE_CONFIG__ && self.__DRIVE_CONFIG__.downloadPrefix) ||
+  '/__dl__/';
 
 self.addEventListener('install', () => { self.skipWaiting(); });
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
 
 self.addEventListener('message', (event) => {
   const d = event.data || {};
+  if (typeof d.downloadPrefix === 'string' && d.downloadPrefix) dlPrefix = d.downloadPrefix;
   if (d.type === 'set-download' && d.token && d.file) {
     downloads.set(d.token, d.file);
     if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
@@ -20,8 +27,8 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (!url.pathname.startsWith('/__dl__/')) return;
-  const token = url.pathname.slice('/__dl__/'.length);
+  if (!url.pathname.startsWith(dlPrefix)) return;
+  const token = url.pathname.slice(dlPrefix.length);
   const file = downloads.get(token);
   if (!file) {
     event.respondWith(new Response('下载任务不存在或已过期，请重新点击下载。', {

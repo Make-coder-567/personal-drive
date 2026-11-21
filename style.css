@@ -269,3 +269,64 @@ body {
 .acfg-speed .hint { margin: 0 0 10px; font-size: 12px; line-height: 1.6; }
 .acfg-speed .btn { font-size: 13px; }
 .ac-speed-result { display: inline-block; margin-left: 8px; font-size: 12px; color: #6d28d9; font-variant-numeric: tabular-nums; }
+
+/* ===== 多端响应式适配（保持原配色与卡片风格） ===== */
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; }
+  .user { flex-wrap: wrap; justify-content: flex-end; gap: 6px 8px; }
+  .user .email { flex: 1 1 100%; text-align: right; }
+  .toolbar { padding: 12px 16px; gap: 10px; }
+  .actions { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    max-width: 100%; padding-bottom: 4px; }
+  .actions .btn { flex: 0 0 auto; }
+  .entries { padding: 0 16px 24px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .dropzone { margin: 0 16px 12px; }
+  .tasks { width: min(380px, calc(100vw - 32px)); right: 16px; bottom: 16px; }
+  .ac-modal-box { width: min(600px, 96vw); }
+}
+
+@media (max-width: 640px) {
+  .topbar { position: sticky; top: 0; z-index: 20; padding: 10px 12px; }
+  .brand { font-size: 17px; }
+  .user { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; }
+  .user .email { flex: 0 0 auto; text-align: left; }
+  .user .btn { flex: 0 0 auto; white-space: nowrap; }
+  .toolbar { flex-direction: column; align-items: stretch; padding: 10px 12px; }
+  .breadcrumb { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .actions { width: 100%; }
+  .entries { padding: 0 12px 20px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .entry { padding: 12px; }
+  .dropzone { margin: 0 12px 12px; padding: 18px 12px; }
+  .tasks { left: 0; right: 0; bottom: 0; width: auto; border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px); max-height: 62vh; }
+  .task-list { max-height: calc(62vh - 76px); }
+  .tasks-head { padding: 12px 16px; }
+  .modal { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+  .modal-box { width: 100vw; max-height: 96vh; border-radius: 12px 12px 0 0; margin-top: auto; }
+  .ac-modal-box { width: 100vw; }
+  .modal-body { padding: 14px; }
+  .modal-foot { padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .accel-dock { left: 8px; right: 8px; bottom: 8px; width: auto; max-width: none; }
+  .ac-list { max-height: 40vh; }
+  .acfg-grid { grid-template-columns: 1fr; }
+  .entry .row-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 420px) {
+  .btn, .tab, .link-btn, .entry .row-actions .btn, .acfg-actions .btn {
+    min-height: 44px; padding: 10px 14px; font-size: 14px;
+  }
+  .btn.small { min-height: 44px; padding: 10px 14px; font-size: 13px; }
+  .form input, .modal-body input, .modal-body select, .acfg-grid input, .acfg-grid select {
+    min-height: 44px; font-size: 16px;
+  }
+  .login-card { width: calc(100vw - 24px); padding: 24px 18px; }
+  .login-card.wide { width: calc(100vw - 24px); }
+  .entries { grid-template-columns: 1fr; }
+  .rc-row { gap: 8px; flex-wrap: wrap; }
+  .rc-row .btn { margin-left: auto; }
+  .modal-body iframe { height: 56vh; }
+  body { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+}

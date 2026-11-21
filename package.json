@@ -1,0 +1,32 @@
+{
+  "name": "personal-drive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "个人云盘：一套 Web 内核输出到 Web / Android / Windows 三端",
+  "scripts": {
+    "dev": "node scripts/build-all.mjs --dev",
+    "gen:config": "node scripts/gen-config.mjs",
+    "vendor": "node scripts/build-vendor.mjs",
+    "build:web": "node scripts/build-all.mjs --web",
+    "build:android": "node scripts/build-all.mjs --android",
+    "build:win": "node scripts/build-all.mjs --windows",
+    "build:all": "node scripts/build-all.mjs --all",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.6.2",
+    "@tencent-ai/workbuddy-cloud-sdk": "0.1.4",
+    "client-zip": "2.5.1"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/cli": "8.6.2",
+    "electron": "31.7.7",
+    "electron-builder": "24.13.3",
+    "esbuild": "0.24.2",
+    "vite": "5.4.21"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

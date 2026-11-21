@@ -448,6 +448,29 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
   }
 
+  // 原生端落盘入口：仅传分片 URL 描述，原生宿主自行流式下载写盘；失败回退原 Web 路径
+  async function downloadViaNativeFs(task, sources) {
+    var nf = window.NativeFs;
+    if (!nf || typeof nf.pickSavePath !== 'function' || typeof nf.saveParts !== 'function') {
+      throw new Error('原生文件系统不可用');
+    }
+    var target = await nf.pickSavePath({ suggestedName: baseName(task.name) });
+    if (!target || target.canceled) throw CANCEL;
+    var taskId = bridge.uid ? bridge.uid() : (String(Date.now()) + Math.random().toString(36).slice(2));
+    var lastWritten = 0;
+    await nf.saveParts({
+      target: target,
+      parts: sources.map(function (src) { return { url: src.url }; }),
+      totalSize: task.size,
+      taskId: taskId,
+      onProgress: function (written) {
+        bumpProgress(task, Math.max(0, Number(written) - lastWritten));
+        lastWritten = Number(written) || 0;
+      },
+    });
+    task.note = '已保存到原生位置';
+  }
+
   async function runDownload(task) {
     var s = ses();
     if (!s || !s.user) throw new Error('登录已失效，请退出后重新登录');
@@ -456,6 +479,16 @@
     task.size = f.size || task.size;
     task.etaTrack = bridge.makeEtaTracker(task.size);
     var sources = await getDownloadSources(task, paths);
+
+    // 原生端优先：只有拿到直链时才能交给宿主下载，否则沿用 SDK 下载路径
+    if (window.NativeFs && typeof window.NativeFs.saveParts === 'function' && sources.length &&
+        sources.every(function (src) { return !!src.url; })) {
+      try { await downloadViaNativeFs(task, sources); return; }
+      catch (e) {
+        if (e === CANCEL || task.cancelFlag || (e && e.code === 'E_NATIVEFS_CANCEL')) throw CANCEL;
+        log('原生落盘失败，回退原下载路径', (e && e.message) || e);
+      }
+    }
 
     var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
     if (window.showSaveFilePicker) {
