@@ -1,9 +1,30 @@
 # 原生构建阻塞记录（Android）
 
 > 记录时间：2026-11-21 ｜ 执行人：工程师 寇豆码（Kou）
-> 结论：**Android 工程源码完整，但本机环境无法产出 APK；未伪造任何 APK 文件。**
+> **更新（同日）：已通过项目内 `.toolchain/` 自举 JDK 21 + Android SDK 36 + Gradle 8.14.3，成功产出 debug 签名 APK：**
+> `build/android/个人云盘-1.0.0-release-unsigned.apk`（3,266,354 bytes）。
+> 下方原始阻塞记录保留作为环境诊断依据；若 `.toolchain/` 被清理，需按第三节命令重新自举。
 
-## 一、已完成的验证
+## 〇、自举结果（后续追加）
+
+| 步骤 | 结果 | 落地路径 |
+| --- | --- | --- |
+| Temurin JDK 21 ZIP（Adoptium API，PowerShell 系统证书下载） | 成功 | `.toolchain/jdk21`（java/javac 21.0.13.1 LTS） |
+| Android commandline-tools Windows ZIP | 成功 | `.toolchain/android-cmdline-tools/cmdline-tools/latest/bin/sdkmanager.bat` |
+| SDK licenses + `platform-tools`、`platforms;android-36`、`build-tools;36.0.0` | 成功（sdkmanager exit 0） | `.toolchain/android-sdk` |
+| Gradle 8.14.3 binary-only ZIP | 成功 | `.toolchain/gradle-8.14.3` |
+| 临时 JAVA_HOME/ANDROID_HOME/GRADLE_USER_HOME 后执行 `assembleRelease` | **BUILD SUCCESSFUL（4m1s，124 tasks，exit 0）** | `android/app/build/outputs/apk/release/app-release.apk` |
+| 产物收集 | 成功 | `build/android/个人云盘-1.0.0-release-unsigned.apk` |
+
+自举期间额外遇到并已解决：
+1. `sdkmanager --licenses` 通过 PowerShell 管道输入 `y` 会卡在交互提示（等待超过 10 分钟）；改为在 `.toolchain/android-sdk/licenses/` 写入已接受许可的标准 hash 文件（android-sdk-license / android-sdk-preview-license）后，`sdkmanager install` 正常完成（exit 0）。
+2. AGP 拒绝含中文的项目路径：`Your project path contains non-ASCII characters ... This warning can be disabled by adding the line 'android.overridePathCheck=true' to gradle.properties`。已在 `android/gradle.properties` 添加 `android.overridePathCheck=true`（AGP 官方覆盖项，构建时提示 experimental 但可正常出包）。
+3. Gradle 构建自动补齐了 `build-tools;35.0.0`（Capacitor 子项目需要），许可文件已覆盖该包。
+4. 无 `ANDROID_KEYSTORE`，`android/app/build.gradle` 按既定逻辑降级 debug 签名，因此文件名标注 `-unsigned`，仅可用于内部测试，不可上架。
+
+原 `npm run build:android` 仍会失败，因为脚本走系统 JBR + Gradle Wrapper（PKIX 与 Java 25 不兼容）；本次成功路径是**项目内临时环境自举**，未修改系统全局配置。
+
+## 一、已完成的验证（历史记录）
 
 1. `npx cap add android` 成功（Capacitor CLI 8.6.2），生成了完整 Android 工程：
    - `android/app/src/main/java/com/workbuddy/personaldrive/{MainActivity,NativeFsPlugin,NativeFsWriter}.java`
@@ -90,7 +111,7 @@ class file major version 69 = Java 25。Gradle 8.13/8.14 与 AGP 8.13 不支持 
 
 | 预期产物 | 实际状态 |
 | --- | --- |
-| `build/android/个人云盘-1.0.0-release.apk` | **未生成**（无 SDK / 无签名材料） |
-| `build/android/个人云盘-1.0.0-release-unsigned.apk` | **未生成**（Gradle 阶段失败） |
+| `build/android/个人云盘-1.0.0-release.apk` | **未生成**（无 release keystore，无法正式签名上架） |
+| `build/android/个人云盘-1.0.0-release-unsigned.apk` | **已生成**，3,266,354 bytes（debug 签名，仅内部测试） |
 
-本文件即为阻塞事实记录；任何未实际生成的安装包都不应以“成功”表述。
+原阻塞已通过项目内自举解决；未实际生成的正式签名 APK 不以“成功”表述。

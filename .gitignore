@@ -4,6 +4,8 @@
 
 # 依赖与系统文件
 node_modules/
+# 本地自举的工具链（JDK/SDK/Gradle 下载物，约数百 MB，不入仓库）
+.toolchain/
 .DS_Store
 Thumbs.db
 *.log

@@ -64,7 +64,7 @@ npm run dev                        # gen-config → vendor → vite dev server
 
 Android 与 Windows 构建依赖本机工具链；缺失时脚本会明确报错，不会生成伪造的 APK/EXE。无 release keystore / 代码签名证书时只能产出内部测试包（Android debug 签名、Windows 未签名，后者会触发 SmartScreen 提示），正式分发前必须补齐签名材料。
 
-本机 Android 工具链缺失（无 SDK 36、仅 JBR 25、Gradle Wrapper 下载受证书链阻断），工程源码完整但 APK 未生成；具体错误与修复命令见 [`docs/BUILD-BLOCKERS.md`](docs/BUILD-BLOCKERS.md)。Windows 未签名 NSIS/portable 已在上述路径实际产出。
+本机系统级 Android 工具链缺失（无 SDK 36、仅 JBR 25、Gradle Wrapper 下载受证书链阻断），但已在项目内 `.toolchain/` 自举 JDK 21 + SDK 36 + Gradle 8.14.3，成功产出 debug 签名的 `build/android/个人云盘-1.0.0-release-unsigned.apk`（仅内部测试，不可上架）；正式签名 APK 仍需提供 release keystore。环境诊断、错误与自举步骤见 [`docs/BUILD-BLOCKERS.md`](docs/BUILD-BLOCKERS.md)。Windows 未签名 NSIS/portable 已在上述路径实际产出。
 
 ## 目录结构
 
