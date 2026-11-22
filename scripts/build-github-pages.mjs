@@ -46,9 +46,9 @@ function main() {
   writeFileSync(resolve(OUT, '.nojekyll'), '', 'utf8');
 
   const sums = [
-    ['个人云盘-1.0.0-release.apk', resolve(ROOT, 'release', 'android', `个人云盘-${version}-release.apk`)],
-    ['个人云盘-1.0.0-win-x64-setup-unsigned.exe', resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-setup-unsigned.exe`)],
-    ['个人云盘-1.0.0-win-x64-portable-unsigned.exe', resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-portable-unsigned.exe`)],
+    [`personal-drive-${version}-release.apk`, resolve(ROOT, 'release', 'android', `个人云盘-${version}-release.apk`)],
+    [`personal-drive-${version}-win-x64-setup-unsigned.exe`, resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-setup-unsigned.exe`)],
+    [`personal-drive-${version}-win-x64-portable-unsigned.exe`, resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-portable-unsigned.exe`)],
   ].filter(([, p]) => existsSync(p)).map(([name, p]) => `${sha256(p)}  ${name}`).join('\n') + '\n';
   writeFileSync(resolve(OUT, 'SHA256SUMS.txt'), sums, 'utf8');
 
