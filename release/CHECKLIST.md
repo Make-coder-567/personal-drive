@@ -14,10 +14,10 @@
 
 ## 必须由你完成
 
-- [ ] 确认是否使用 `.env.production` 当前云服务配置作为正式配置；如不是，提供正式 endpoint / publishableKey / siteCode / shareBaseUrl
+- [x] 确认沿用 `.env.production` 当前云服务配置作为正式配置（2026-11-22）
 - [ ] 以个人开发者注册 Microsoft Partner Center，并预留应用名称与 Identity
 - [ ] 准备 Windows Authenticode 代码签名证书（官网 EXE 正式签名必需）
-- [ ] 准备个人主体信息与联系方式，补全隐私政策、用户协议
+- [x] 准备个人主体信息与联系方式，补全隐私政策、用户协议（黄锦荣 / mrhuangak@foxmail.com / 2026-11-23 生效）
 - [ ] 部署隐私政策与用户协议到公网 HTTPS URL
 - [ ] 准备官网下载页域名与 HTTPS
 - [ ] 如在中国大陆分发 Android 应用，完成 APP 备案与域名 ICP 备案
@@ -27,7 +27,7 @@
 
 ## 发布前最后检查
 
-- [ ] `.env.production` 已填正式值并重建三端
+- [x] `.env.production` 已确认为正式值并重建三端
 - [ ] Android APK 使用正式 keystore 签名
 - [ ] Windows EXE 使用代码签名证书签名
 - [ ] MSIX Identity / Publisher 与 Partner Center 完全一致
