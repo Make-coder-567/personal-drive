@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>个人云盘 1.0.0 发布说明</title>
+  <style>
+    :root { --bg:#f5f7fa; --panel:#fff; --text:#1f2733; --muted:#6b7685; --primary:#2f6fed; --border:#e3e8ef; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.8 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+    main { max-width:900px; margin:40px auto; padding:0 20px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:30px; box-shadow:0 8px 28px rgba(16,24,40,.06); }
+    h1,h2 { margin-top:0; }
+    h2 { margin-top:26px; font-size:19px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { border-bottom:1px solid var(--border); padding:9px 6px; text-align:left; vertical-align:top; }
+    code { display:block; background:var(--bg); padding:10px; border-radius:8px; word-break:break-all; font-size:13px; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>个人云盘 1.0.0 发布说明</h1>
+    <p class="sub">构建时间：2026-11-22</p>
+
+    <h2>版本信息</h2>
+    <ul>
+      <li>版本号：1.0.0</li>
+      <li>Android versionCode：1</li>
+      <li>Windows 包版本：1.0.0.0（AppX）</li>
+    </ul>
+
+    <h2>功能</h2>
+    <ul>
+      <li>邮箱登录、注册、找回密码；</li>
+      <li>文件与文件夹管理；</li>
+      <li>文件上传、分片续传、文件夹上传；</li>
+      <li>文件下载、文件夹 ZIP 下载；</li>
+      <li>在线预览图片、PDF、文本；</li>
+      <li>公开分享链接；</li>
+      <li>Android 原生文件保存；</li>
+      <li>Windows 原生窗口与流式写盘。</li>
+    </ul>
+
+    <h2>本次修复</h2>
+    <ul>
+      <li>修复 Android WebView CORS 预检导致的旧文件不可见与上传失败；</li>
+      <li>修复 Android 启动白屏与空错误浮层；</li>
+      <li>修复 Windows 构建目录占用导致的 EPERM；</li>
+      <li>完成三端统一配置注入与发布工程。</li>
+    </ul>
+
+    <h2>产物状态</h2>
+    <table>
+      <tr><th>产物</th><th>状态</th><th>用途</th></tr>
+      <tr><td>Android release APK</td><td>正式 keystore 签名</td><td>官网直发</td></tr>
+      <tr><td>Android AAB</td><td>正式 keystore 签名</td><td>备用</td></tr>
+      <tr><td>Windows setup EXE</td><td>未签名候选</td><td>内部测试，正式分发需重签</td></tr>
+      <tr><td>Windows portable EXE</td><td>未签名候选</td><td>内部测试，正式分发需重签</td></tr>
+      <tr><td>Windows AppX</td><td>未签名、Identity 占位</td><td>商店候选，提交前需替换身份</td></tr>
+    </table>
+
+    <h2>校验值</h2>
+    <code>c72c837c76cef133dd4d1fc2c7f976de5346a37578fca9c5cd154beacca029bd  release/android/个人云盘-1.0.0-release.apk
+bf3591af2f0fdccf1e8de46503e6ff41182cfdfce39a0819b133ee9e837f2cb0  release/android/personal-drive-1.0.0-release.aab
+b6880a0d304020df31c4d375df12548d8b35e21134acc17c1399c22aa6421921  release/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe
+92e8202045123fe8cf32cbaf90f0d30141615af35b93190e066e46a0cee134f5  release/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe
+9808da221a897ab4b419bfea71999ba259ea7cb10418869868c2e5d081dd432e  release/windows/store/个人云盘-1.0.0-store-candidate.appx</code>
+  </div>
+</main>
+</body>
+</html>
