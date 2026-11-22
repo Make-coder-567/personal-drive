@@ -17,6 +17,7 @@
     "release:windows": "node scripts/release-windows.mjs",
     "gen:store-assets": "node scripts/gen-store-assets.mjs",
     "build:pages": "node scripts/build-github-pages.mjs",
+    "build:workbuddy-site": "node scripts/build-github-pages.mjs && node scripts/finalize-workbuddy-site.mjs",
     "check": "node scripts/check.mjs"
   },
   "dependencies": {

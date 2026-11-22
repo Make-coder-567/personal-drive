@@ -53,5 +53,6 @@ electron-builder.yml.local
 .electron-builder.release.yml
 
 # 发布构建临时目录
+release/github-pages/downloads/
 release/windows/store/win-unpacked/
 release/windows/store/builder-debug.yml
