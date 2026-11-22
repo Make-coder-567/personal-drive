@@ -13,9 +13,10 @@ const REQUIRED = [
 ];
 // 分段拼接，避免校验脚本自身命中禁用词
 const FORBIDDEN = ['w' + 'bpk_', 'PBCK' + 'Y4YAA5', 'personal-drive-52476.app' + '.workbuddy.host'];
-// docs 为历史设计文档；public/vendor 为第三方依赖副本，均不属于业务源码
+// docs 为历史设计文档；release 为发布材料（隐私政策需披露服务域名）；
+// public/vendor 为第三方依赖副本，均不属于业务源码。
 const SKIP_DIRS = new Set([
-  'node_modules', 'dist', 'build', 'docs', '.git', '.workbuddy', 'android',
+  'node_modules', 'dist', 'build', 'docs', 'release', '.git', '.workbuddy', 'android',
   'vendor', 'public',
 ]);
 

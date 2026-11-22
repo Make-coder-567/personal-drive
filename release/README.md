@@ -9,7 +9,8 @@ release/
 ├── android/                 # 官网直发 APK（正式签名）/ AAB（备用）
 ├── windows/                 # 官网直发 NSIS / portable；store/ 放 MSIX 候选
 ├── assets/                  # 商店图标与下载页素材
-├── download/                # 可直接部署的官网下载页
+├── download/                # 下载页源文件
+├── github-pages/            # 可直接上传到 GitHub Pages 的完整静态目录
 ├── secrets/                 # 本地签名凭据，已被 .gitignore 排除
 ├── PRIVACY-POLICY.md        # 隐私政策模板（需填写主体信息）
 ├── TERMS-OF-USE.md          # 用户协议模板（需填写主体信息）
@@ -22,7 +23,8 @@ release/
 
 ```bash
 npm run release:android     # 生成 release/android/个人云盘-1.0.0-release.apk
-npm run release:windows     # 生成 release/windows/ 官网候选包与 MSIX 候选
+npm run release:windows     # 生成 release/windows/ 官网候选包与 AppX 候选
+npm run build:pages         # 生成 release/github-pages/ GitHub Pages 部署目录
 ```
 
 ## 重要说明

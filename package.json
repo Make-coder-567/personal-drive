@@ -16,6 +16,7 @@
     "release:android": "node scripts/release-android.mjs",
     "release:windows": "node scripts/release-windows.mjs",
     "gen:store-assets": "node scripts/gen-store-assets.mjs",
+    "build:pages": "node scripts/build-github-pages.mjs",
     "check": "node scripts/check.mjs"
   },
   "dependencies": {
