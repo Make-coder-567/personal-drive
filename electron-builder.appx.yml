@@ -1,0 +1,33 @@
+appId: com.workbuddy.personaldrive
+productName: 个人云盘
+copyright: Copyright © 2026 个人云盘
+
+directories:
+  output: release/windows/store
+  buildResources: electron/assets
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+win:
+  icon: electron/assets/icon.ico
+  target:
+    - target: appx
+      arch:
+        - x64
+
+appx:
+  applicationId: PersonalDrive
+  # 以下为候选占位；正式提交前必须替换为你在 Partner Center 预留的 Identity。
+  identityName: PersonalDrive.PersonalDrive
+  publisher: CN=Personal Drive Developer
+  publisherDisplayName: 个人云盘开发者
+  displayName: 个人云盘
+  languages:
+    - zh-CN
+  capabilities:
+    - internetClient
+    - privateNetworkClientServer
+  minVersion: 10.0.17763.0

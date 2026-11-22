@@ -29,6 +29,14 @@ public/vendor/
 *.pfx
 android/keystore/
 electron/certs/
+release/secrets/
+
+# 发布候选包（由脚本生成）
+release/android/*.apk
+release/windows/*.exe
+release/windows/store/*.msix
+release/windows/store/*.msixupload
+release/windows/store/*.appx
 
 # Android / Capacitor 本地文件
 android/.gradle/
@@ -41,3 +49,8 @@ android/.idea/
 # Electron 打包缓存
 electron-builder.yml.local
 .electron-builder.stage.yml
+.electron-builder.release.yml
+
+# 发布构建临时目录
+release/windows/store/win-unpacked/
+release/windows/store/builder-debug.yml
