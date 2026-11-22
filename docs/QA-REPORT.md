@@ -265,3 +265,89 @@ Electron 不做 CORS 校验所以 PC 正常；Android WebView（`https://localho
 - Windows：共享源码变更，`npm run build:win` 已重建（setup + portable）。
 
 详细证据与预检实测见 `docs/MOBILE-DATA-DIAG.md`。
+
+---
+
+## 八、移动端数据与上传修复回归（QA 独立复验，2026-11-22 10:35–10:50）
+
+> 验证人：QA 工程师 严过关（Yan） ｜ 独立回归，非复述工程师结论
+> 目标：证明功能真实恢复（旧文件可见 + 上传成功 + 无回归），而非仅确认文件存在
+> 验证对象：`commit 4f81b8feaa7074973e59cf3552527d8388252160`
+> 设备：`HEW4YTYTWGVC7LHU`（OPPO PJG110，adb 已授权） ｜ 包：`com.workbuddy.personaldrive`
+> 方式：源码审查 + 构建产物哈希/解包 + adb 实机功能回归 + 桌面构建复核
+
+### 8.0 总判定
+
+# PASS
+
+本次 BugFix 无效路径已彻底修复并经 QA **独立实机证明**：Android 旧账号 `2111816543045169152` 登录后文件列表恢复正常（修复前候选=0/文件=0/文件夹=0 → 修复后候选=3/文件=8/文件夹=4），4 个旧文件夹全部可见可进入；**QA 自主完成一次真实文件上传端到端验证**（成功 1、失败 0），并在 force-stop 冷重启后确认文件已持久化到云端（文件计数 8→9、元数据版本 58→60、文件在新列表中可见）。全链路无 `Failed to fetch` / `list-err` / `saveMeta-err` / `Uncaught` / `TypeError`。桌面端 `npm run build:web`、`npm run check` 均通过，无平台兼容回退。无新增代码缺陷，无阻断项，**可交付**。
+
+遗留项均为既有环境/签名类 Known（见第四节 K2/K3/K4 与 8.6），非本次引入。
+
+### 8.1 逐项验证表
+
+| # | 验证项目 | 方法 | 结果 | 关键证据（QA 独立实测） |
+| --- | --- | --- | --- | --- |
+| 8.1.1 | fetch 包装早于 SDK | 阅读 index.html 脚本顺序 | ✅ PASS | `src/compat.js` 在 line 11，`vendor/workbuddy-cloud-sdk.js` 在 line 22，`src/sdk-loader.js` 在 line 346；兼容层先于 SDK 执行 |
+| 8.1.2 | 正确剥离两种 header | 阅读 src/compat.js + SDK bundle | ✅ PASS | `STRIP_HEADERS=['x-client-info','x-upsert']`；SDK `dist/vendor/workbuddy-cloud-sdk.js` 实测含 `X-Client-Info: storage-js/2.112.3` 与上传 POST 的 `x-upsert`，剥离目标准确 |
+| 8.1.3 | 保留 init 字段 | 阅读 fetch 包装实现 | ✅ PASS | `for (var k in init) if(hasOwnProperty) nextInit[k]=init[k]` 全量复制 method/body/signal/duplex，仅覆盖 headers；Headers 构造失败回退原始调用；`__driveCorsFetchPatched` 幂等 |
+| 8.1.4 | 包装进入 SDK 调用链 | 追踪 SDK 运行时 | ✅ PASS | app.js `createWorkBuddyCloud(publicConfig)` 未传 `fetch` → SDK `resolveRuntimeConfig` 用 `globalThis.fetch.bind(globalThis)`；app.js 经 sdk-loader 在 compat.js 之后加载，故绑定的是已包装的 fetch，剥离逻辑生效 |
+| 8.1.5 | 无硬编码回潮 | `npm run check` | ✅ PASS | 4/4 产物 OK，`[check] 自检通过。`，退出码 0 |
+| 8.1.6 | 诊断日志就位 | grep app.js | ✅ PASS | `[list-err]`(:152)、`[saveMeta-err]`(:573)、`[auth] id=`(:357)、`[meta] uid=`(:551)、`[upload] 选中=`(:1000) 全部存在 |
+| 8.1.7 | 构建产物存在/非空 | find + 大小 | ✅ PASS | dist 18 文件全非空；APK 3,271,044 B；两个 EXE 均 >110 MB |
+| 8.1.8 | APK 结构有效 | python `zipfile.testzip()` | ✅ PASS | `testzip()=None`，457 条目 |
+| 8.1.9 | APK 内含修复版 Web 资源 | 解包 grep | ✅ PASS | `assets/public/src/compat.js` 含 `x-client-info`/`x-upsert`/`__driveCorsFetchPatched`；`assets/public/app.js` 含 `list-err`/`saveMeta-err`/`[meta] uid=`；内嵌 index.html 脚本顺序 compat 早于 SDK |
+| 8.1.10 | EXE 为真实 PE | 读 MZ + PE 偏移 | ✅ PASS | setup/portable 均 `MZ=True`、PE 偏移 0xD8 |
+| 8.1.11 | 设备/安装版本 | adb devices + pm path + dumpsys | ✅ PASS | 在线 `HEW4YTYTWGVC7LHU device`；`versionName=1.0.0`；`lastUpdateTime=2026-11-22 10:21:19`（修复后）；拉取安装 APK 哈希与构建产物逐字节一致 |
+| 8.1.12 | 实机：认证 id 与 PC 一致 | force-stop→清 logcat→monkey 启动→抓日志 | ✅ PASS | `D DriveWeb: [auth] id=2111816543045169152 email=(none) v=v1.0.0` |
+| 8.1.13 | 实机：旧文件/文件夹可见 | `[meta]` 日志 + UI 截图 | ✅ PASS | `[meta] uid=… 候选=3 ver=58 文件=8 文件夹=4`（修复前 0/0/0）；截图 `qa-mobile-regression.png` 根目录显示"离线ai项目"与 JPG 文件，无"此目录为空" |
+| 8.1.14 | 实机：4 个旧文件夹齐全 | 进入文件夹截图 | ✅ PASS | 截图 `qa-folder-open.png`：`离线ai项目 → offline_chatAI / 全量包 / 轻量包`，与 PRD 要求的 4 个文件夹完全一致 |
+| 8.1.15 | **实机：普通文件上传端到端** | adb 推 1×1 PNG→选文件→上传→查日志/弹窗 | ✅ **PASS** | `[upload] 选中=1`；弹窗 `上传到「根目录」：共 1 个文件，成功 1，跳过 0，取消 0，失败 0。`；任务状态"完成"；截图 `qa-up-result.png` |
+| 8.1.16 | **实机：上传持久化（冷重启复核）** | force-stop→清 logcat→重启→查 meta + UI | ✅ **PASS** | 重启后 `[meta] … 候选=3 ver=60 文件=9 文件夹=4`（较上传前 8→9、ver 58→60）；截图 `qa-up-persist.png` 新列表底部可见 `qa_regression_1x1.png` |
+| 8.1.17 | 无异常日志 | 全 buffer grep | ✅ PASS | 无 `Failed to fetch` / `list-err` / `saveMeta-err` / `REJECTION Failed to fetch` / `Uncaught` / `TypeError` / `ReferenceError`（系统 launcher/JsConsole 噪声已排除） |
+| 8.1.18 | 桌面端构建无回归 | `npm run build:web` + `npm run check` | ✅ PASS | build:web `✓ built in 4.25s` exit 0；check exit 0；compat 为三端共享纯前端垫片，Electron 源码未引入平台回退；`dist/index.html` 重建后仍 21,636 B、脚本顺序不变 |
+
+### 8.2 源码审查详情
+
+- **`src/compat.js`**（核心修复）：在 IIFE 中先判 `nativeFetch` 为函数且 `!__driveCorsFetchPatched`，再包装 `global.fetch`。对 `init.headers` 用 `new Headers()` 归一化后删除两个头；任一命中则浅拷贝 `init` 全部自有属性并替换 `headers` 调用原生 fetch，未命中或构造异常均原样调用——不改动 method/body/signal/duplex，具备幂等与失败安全。
+- **脚本顺序**：`index.html` line 11 加载 compat，line 22 加载 SDK，line 346 由 sdk-loader 动态加载 app.js → accel.js。兼容层确定先于一切 SDK 请求。
+- **`app.js`**（诊断加固）：新增统一 `diagLog()` 通道，仅在 Capacitor 端经 `window.__driveBootError.log` 写 logcat，Web/Electron 为无害空操作；`[list-err]`、`[saveMeta-err]`、`[list] 失败`、`[auth] id`、`[meta] uid`、`[upload] 选中` 六处埋点齐备。
+- **调用链确认**：SDK 未收到自定义 `fetch`（publicConfig 仅 endpoint/relay/key），`resolveRuntimeConfig()` 绑定 `globalThis.fetch`；因 compat 先加载，绑定对象即包装后 fetch，剥离逻辑真实生效——非"看起来修了但没走到"。
+
+### 8.3 构建产物哈希（QA 实测，SHA-256）
+
+| 产物 | 大小（字节） | SHA-256（实测） | 说明 |
+| --- | --- | --- | --- |
+| `build/android/个人云盘-1.0.0-release-unsigned.apk` | 3,271,044 | `3c34a4e5a388396a5e3f89f267df239c34519f6c9e2c91f25cb53e58cc9e5823` | 与设备上 `pm path` 拉取的 `base.apk` 哈希**逐字节一致** |
+| `build/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe` | 121,515,648 | `92c191a7cb42bcb5cfa116f9a26754e8b4ae4eb31b2f12b515cbc05917b1e48d` | 本轮重建版 |
+| `build/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe` | 110,571,747 | `7d491d98175d3638ee037e7e46a2add0944eb0c6dd602d59b9a765c2c82087f6` | 本轮重建版 |
+| `dist/index.html` | 21,636 | `6c73c8f7d6053c4fc0b35912eb68547e5dfae715db02d5173a72a486599342e6` | 重建后与重建前一致（可复现） |
+| `dist/app.js` | 105,329 | `8f239841e851bd9917b7ae96e43a34336b3718a3efb9aea5c009434d6952bebd` | 含诊断日志 |
+| `dist/src/compat.js` | 2,778 | `c7246caee76310ba9bc53fda021be603ca3fc327c869c531fc02510aec371dc3` | 含 CORS 兼容层 |
+
+> 说明：APK/EXE 哈希与第四节旧版不同，系本次 BugFix 重建所致（源码变更 → 产物必然变化），非异常；版本仍为 1.0.0。Vite 构建日志显示的 `dist/index.html 15.70 kB` 为其转换内容统计，实际落盘文件仍为 21,636 B。
+
+### 8.4 实机回归时间线（可复现）
+
+1. `adb devices -l` → 设备在线；`pm path` → base.apk 路径；拉取 base.apk 与构建产物哈希一致。
+2. `am force-stop` → `logcat -c` → `monkey -p … 1` 启动（全程未要求用户重新登录，session 在 localStorage 持久）。
+3. 抓 `-s DriveWeb:* DriveWebError:*` → `[auth] id=2111816543045169152`、`[meta] 候选=3 ver=58 文件=8 文件夹=4`。
+4. 截图根目录 → "离线ai项目" + JPG 文件可见；点击文件夹进入 → `offline_chatAI / 全量包 / 轻量包` 三个子文件夹可见。
+5. 推入 1×1 PNG（`qa_regression_1x1.png`）→ 上传文件 → 选"根目录" → 选文件 → `[upload] 选中=1`，弹窗"成功 1，失败 0"，任务"完成"。
+6. `am force-stop` → `logcat -c` → 重启 → `[meta] … ver=60 文件=9`，新列表底部可见 `qa_regression_1x1.png` → **持久化确认**。
+7. 全 buffer 错误串扫描 → 0 命中。
+
+**证据截图**（存于 docs/）：`qa-mobile-regression.png`（旧文件恢复）、`qa-folder-open.png`（4 个旧文件夹）、`qa-up-result.png`（上传成功弹窗）、`qa-up-persist.png`（冷重启后文件仍在）。
+
+### 8.5 路由决策
+
+**NoOne** —— 全部验证项通过，未发现源码缺陷，无需回退工程师；测试断言均基于 PRD/诊断预期，无 QA 自身误判。
+
+### 8.6 已知问题（非本次引入，不影响交付）
+
+- **K5 · 测试文件残留云端**：QA 上传的 `qa_regression_1x1.png`（70 B）留在根目录以证明持久化；设备本地同名文件已 `rm` 清理。如需纯净演示，可在 UI 手动删除该 70 B 文件——不影响功能判定。
+- 既有 K2（三端未正式签名）、K3（系统级 Android 构建路径不可用，需 `.toolchain/`）、K4（无头会话 GUI 未做交互冒烟）保持原状；其中 K4 的 GUI 交互部分已由本次 adb 实机操作**大幅补强**（登录态恢复、文件浏览、上传、重启持久化均已实测），仅桌面 Electron GUI 仍未在带界面会话验证。
+
+### 8.7 交付结论
+
+**可交付（PASS）**。Android 数据不可见与上传失败两个原始症状均已独立修复验证；桌面端无回归；产物真实、哈希明确、可复现。建议后续按 K2 补齐正式签名、按 K3 在 CI 固化 Android 构建环境。
