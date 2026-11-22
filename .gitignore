@@ -33,6 +33,7 @@ release/secrets/
 
 # 发布候选包（由脚本生成）
 release/android/*.apk
+release/android/*.aab
 release/windows/*.exe
 release/windows/store/*.msix
 release/windows/store/*.msixupload
