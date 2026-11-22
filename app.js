@@ -93,6 +93,12 @@ function makeEtaTracker(total) {
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function b64encodeUrl(s) { return btoa(unescape(encodeURIComponent(s))); }
+// 统一诊断通道：仅 Android Capacitor 会真正写入 logcat，Web/Electron 下为无害空操作。
+function diagLog(tag, message) {
+  if (window.__driveBootError && typeof window.__driveBootError.log === 'function') {
+    try { window.__driveBootError.log(tag, String(message)); } catch (e) { /* 诊断不影响业务 */ }
+  }
+}
 
 // 兼容 SDK 返回形态（download 可能返回 Blob 或 {data}）
 async function getBlob(result) {
@@ -142,11 +148,19 @@ async function listKeys(prefix, paginate) {
     try {
       const r = await cloud.storage.list(prefix, { limit: PAGE, offset });
       arr = pickArray(r, 0) || pickArray(r && r.data, 0) || [];
+      if (r && r.error) {
+        diagLog('DriveWeb', '[list-err] prefix=' + prefix + ' ' + String((r.error && (r.error.message || r.error.code)) || r.error).slice(0, 220));
+      }
       if (!arr.length && offset === 0) {
         const shape = (x) => x == null ? String(x) : (Array.isArray(x) ? 'array[' + x.length + ']' : 'object{' + Object.keys(x).slice(0, 10).join(',') + '}');
         console.warn('[list] 前缀', prefix, '未解析到对象; r=', shape(r), ' r.data=', shape(r && r.data));
       }
-    } catch (e) { break; }
+    } catch (e) {
+      if (window.__driveBootError && typeof window.__driveBootError.log === 'function') {
+        window.__driveBootError.log('DriveWeb', '[list] 失败 prefix=' + prefix + ' offset=' + offset + ' ' + ((e && (e.message || e.code)) || e));
+      }
+      break;
+    }
     if (!arr.length) break;
     let added = 0;
     for (const o of arr) {
@@ -339,6 +353,9 @@ function enterApp() {
     actions.appendChild(inp);
   }
   console.log('[auth] 用户:', session.user.email || '(无邮箱)', 'id:', session.user.id, '版本:', APP_VERSION);
+  if (window.__driveBootError && typeof window.__driveBootError.log === 'function') {
+    window.__driveBootError.log('DriveWeb', '[auth] id=' + session.user.id + ' email=' + (session.user.email || '(none)') + ' v=' + APP_VERSION);
+  }
   cloud.auth.onAuthStateChange((event, s) => { if (event === 'SIGNED_OUT') { session = null; showLogin(); } });
   loadMeta().then(render);
   maybeShowHelp();
@@ -530,6 +547,9 @@ async function loadMeta() {
   // 关键：把版本号抬到所有候选的最大值，保证下一次保存能“盖过”那些空的旧版本
   meta.__ver = Math.max(maxVer, Number(meta.__ver) || 0);
   console.log('[meta] 候选数:', cands.length, '采用版本:', meta.__ver, '文件数:', meta.files.length);
+  if (window.__driveBootError && typeof window.__driveBootError.log === 'function') {
+    window.__driveBootError.log('DriveWeb', '[meta] uid=' + session.user.id + ' 候选=' + cands.length + ' ver=' + meta.__ver + ' 文件=' + meta.files.length + ' 文件夹=' + meta.folders.length);
+  }
 }
 async function saveMeta() {
   meta.__ver = (meta.__ver || 0) + 1; // 每次保存单调递增，用于加载时选最新
@@ -549,7 +569,10 @@ async function saveMeta() {
   const ver = String(meta.__ver).padStart(9, '0');
   const key = cloud.storage.userPath(session.user.id, 'meta/m_' + ver + '_' + Date.now() + '.json');
   const r3 = await cloud.storage.upload(key, blob, { contentType: 'application/json' });
-  if (r3 && r3.error) throw r3.error;
+  if (r3 && r3.error) {
+    diagLog('DriveWeb', '[saveMeta-err] ' + String((r3.error && (r3.error.message || r3.error.code)) || r3.error).slice(0, 220));
+    throw r3.error;
+  }
   try { localStorage.setItem(metaKeyLS(), key); } catch (e) {}
 }
 
@@ -973,6 +996,9 @@ async function uploadFiles(fileList, targetFolderId) {
   });
   if (!items.length) { alert('没有读取到任何文件，请确认所选文件夹内有文件。'); return; }
   console.log('[upload] 选中文件数:', items.length, '首个路径:', items[0] && items[0].path);
+  if (window.__driveBootError && typeof window.__driveBootError.log === 'function') {
+    window.__driveBootError.log('DriveWeb', '[upload] 选中=' + items.length + ' 首路径=' + (items[0] && items[0].path ? items[0].path : '(无)'));
+  }
   const startFolder = (targetFolderId === undefined) ? currentFolderId : targetFolderId;
   console.log('[upload] 目标目录:', startFolder == null ? '根目录' : startFolder, '文件数:', items.length, '首个路径:', items[0] && items[0].path);
   // P0-3：大文件批量上传前，自动探测网关允许的最大分片（无手动设置时；结果缓存 7 天）

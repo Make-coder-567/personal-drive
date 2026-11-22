@@ -115,3 +115,25 @@ class file major version 69 = Java 25。Gradle 8.13/8.14 与 AGP 8.13 不支持 
 | `build/android/个人云盘-1.0.0-release-unsigned.apk` | **已生成**，3,266,354 bytes（debug 签名，仅内部测试） |
 
 原阻塞已通过项目内自举解决；未实际生成的正式签名 APK 不以“成功”表述。
+
+---
+
+## 五、Android 构建：cap sync 触发沙箱批量删除保护（新增 / 可绕过）
+
+- **现象**：在本工作区执行 `npm run build:android`，`capacitor sync android` 阶段失败：
+  `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED]`，目标
+  `android/capacitor-cordova-android-plugins`（1322 个文件，阈值 50）。
+- **原因**：Capacitor CLI 的 `update android` 会先整体删除该目录再重建；
+  工作区沙箱对批量删除做了保护。与代码、SDK、签名无关。
+- **绕过（本次采用）**：本项目未改动任何原生插件，仅需同步 Web 资源，因此用：
+
+  ```bash
+  cap copy android
+  cd android && <GRADLE> assembleRelease
+  node scripts/collect-artifacts.mjs android
+  ```
+
+  产出的 `android/app/build/outputs/apk/release/app-release.apk` 与完整 sync 路径一致。
+- **何时不能用绕过**：新增/升级 Capacitor 插件、改动 `capacitor.config.ts` 的平台配置时，
+  必须执行完整 `cap sync android`；此时需在允许批量删除的环境（CI）中运行，
+  或对沙箱规则做显式确认。

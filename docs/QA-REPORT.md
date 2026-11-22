@@ -232,3 +232,36 @@ Get-Item <artifact>                                          # 大小
 Get-AuthenticodeSignature <exe>                              # 签名状态
 Get-FileHash <artifact> -Algorithm SHA256                    # 哈希
 ```
+
+---
+
+## 七、移动端数据回归（BugFix 快捷路径，2026-11-22）
+
+### 缺陷
+
+Android 端登录旧账号后看不到 PC 端已有文件，且上传文件/文件夹失败；PC Electron 端正常。
+
+### 根因
+
+WorkBuddy Cloud SDK `storage-js/2.112.3` 在所有 storage 请求上携带 `X-Client-Info`，
+上传（POST）额外携带 `x-upsert`；云端 CORS `Access-Control-Allow-Headers` 白名单不含这两项。
+Electron 不做 CORS 校验所以 PC 正常；Android WebView（`https://localhost`）预检失败，
+`fetch()` 抛 `TypeError: Failed to fetch`，导致：
+
+- `list`/`download` 返回 `{error}` → `loadMeta()` 候选=0 → 文件列表空；
+- `saveMeta()` 第三步上传抛出 → 上传任务失败。
+
+用户 id 实测 `2111816543045169152`，与 PC 一致，**排除账号/租户串号**。
+
+### 修复与回归
+
+- 修复：`src/compat.js` 增加 fetch 兼容层，剥离 `x-client-info` 与 `x-upsert`；
+  `app.js` 增加 `[list-err]` / `[saveMeta-err]` 诊断日志。
+- Web：`npm run build:web` / `npm run check` 通过。
+- Android：修复版 APK 已 `adb install -r` 安装到 HEW4YTYTWGVC7LHU；重启后
+  `[meta] 候选=2 ver=56 文件=7 文件夹=4`，UI 显示 4 个文件夹；
+  实机上传 1 个文件 → 「成功 1，失败 0」，任务「完成」，文件立即在列表中可见；
+  logcat 无 `REJECTION Failed to fetch`。
+- Windows：共享源码变更，`npm run build:win` 已重建（setup + portable）。
+
+详细证据与预检实测见 `docs/MOBILE-DATA-DIAG.md`。

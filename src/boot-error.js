@@ -42,5 +42,22 @@
     append('REJECTION ' + ((reason && (reason.stack || reason.message)) || reason || '未知 Promise 拒绝'));
   });
 
-  global.__driveBootError = { append: append, messages: function () { return buffer.slice(); } };
+  function remoteLog(tag, message) {
+    try {
+      var p = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.DriveConsole;
+      if (p && typeof p.log === 'function') p.log({ tag: tag, message: String(message) }).catch(function () {});
+    } catch (e) { /* 诊断通道失败不影响业务 */ }
+  }
+
+  global.__driveBootError = {
+    append: append,
+    messages: function () { return buffer.slice(); },
+    log: remoteLog,
+  };
+  append = (function (original) {
+    return function (text) {
+      original(text);
+      remoteLog('DriveWebError', String(text));
+    };
+  })(append);
 })(typeof window !== 'undefined' ? window : self);

@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeFsPlugin.class);
+        registerPlugin(DriveConsole.class);
         super.onCreate(savedInstanceState);
     }
 }
