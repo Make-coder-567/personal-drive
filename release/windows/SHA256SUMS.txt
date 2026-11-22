@@ -1,0 +1,3 @@
+b6880a0d304020df31c4d375df12548d8b35e21134acc17c1399c22aa6421921  release/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe
+92e8202045123fe8cf32cbaf90f0d30141615af35b93190e066e46a0cee134f5  release/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe
+9808da221a897ab4b419bfea71999ba259ea7cb10418869868c2e5d081dd432e  release/windows/store/个人云盘-1.0.0-store-candidate.appx
