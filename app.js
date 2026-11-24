@@ -338,6 +338,12 @@ function enterApp() {
     b.onclick = runDiag;
     userBox.insertBefore(b, document.getElementById('btn-logout'));
   }
+  if (userBox && document.getElementById('feedback-modal') && !document.getElementById('btn-feedback')) {
+    const fb = document.createElement('button');
+    fb.id = 'btn-feedback'; fb.className = 'btn ghost'; fb.textContent = '反馈';
+    fb.onclick = openFeedback;
+    userBox.insertBefore(fb, document.getElementById('btn-help') || document.getElementById('btn-logout'));
+  }
   // 动态补充“校验文件夹”按钮与目录输入（即使 HTML 被缓存也能用）
   const actions = document.querySelector('.toolbar .actions');
   if (actions && !document.getElementById('btn-check-folder')) {
@@ -359,7 +365,8 @@ function enterApp() {
   cloud.auth.onAuthStateChange((event, s) => { if (event === 'SIGNED_OUT') { session = null; showLogin(); } });
   loadMeta().then(render);
   maybeShowHelp();
-  if (window.Accel && typeof window.Accel.onAppReady === 'function') { try { window.Accel.onAppReady(); } catch (e) {} }
+  const fbParam = new URLSearchParams(location.search).get('feedback');
+  if (fbParam) { setTimeout(() => { openFeedback(); fbOpenDetail(fbParam, 'inbox'); }, 400); }
 }
 
 async function doLogin() {
@@ -1981,6 +1988,511 @@ function maybeShowHelp() {
   setTimeout(() => { openHelp(); }, 800);
 }
 
+// ---------- 用户反馈 ----------
+const FB_TYPES = { bug: '功能异常', ui: '界面/交互问题', perf: '性能问题', suggest: '功能建议', other: '其他' };
+const FB_SEVS = { low: '低', medium: '中', high: '高', critical: '紧急' };
+const FB_STATUS = { pending: '待处理', replied: '已回复', fixed: '已修复' };
+let fbAttachmentFile = null;
+let fbSubmitting = false;
+let fbCurrentId = null;
+let fbCurrentMode = 'mine';
+
+function fbDir() { return cloud.storage.userPath(session.user.id, 'feedback'); }
+function fbPath(id) { return cloud.storage.userPath(session.user.id, 'feedback/' + id + '.json'); }
+function fbIndexPath() { return cloud.storage.userPath(session.user.id, 'feedback/index.json'); }
+function fbAttPath(id, name) {
+  const safe = String(name || 'file').replace(/[^\w.\-]+/g, '_').slice(-80);
+  return cloud.storage.userPath(session.user.id, 'feedback/attachments/' + id + '_' + safe);
+}
+async function fbReadJson(path) {
+  const b = await getBlob(await cloud.storage.download(path));
+  if (!b) throw new Error('数据为空');
+  return JSON.parse(await b.text());
+}
+async function fbWriteJson(path, obj) {
+  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  // update(PUT) 是覆盖语义，可重写已存在的反馈（回复/改状态/写回邮件状态都要覆盖同一路径）；
+  // 若对象尚不存在或 update 不可用，回退到 upload 创建。避免 STORAGE_KEY_ALREADY_EXISTS。
+  try {
+    const r = await cloud.storage.update(path, blob, { contentType: 'application/json' });
+    if (!(r && r.error)) return;
+  } catch (e) { /* update 不可用或对象不存在，继续尝试创建 */ }
+  const r = await cloud.storage.upload(path, blob, { contentType: 'application/json' });
+  if (r && r.error) throw r.error;
+}
+async function fbLoadIndex() {
+  try { const j = await fbReadJson(fbIndexPath()); return { items: Array.isArray(j.items) ? j.items : [] }; }
+  catch (e) { return { items: [] }; }
+}
+async function fbSaveIndex(idx) { await fbWriteJson(fbIndexPath(), idx); }
+function fbIndexItem(fb) {
+  return {
+    id: fb.id, type: fb.type, severity: fb.severity, status: fb.status,
+    summary: String(fb.description || '').slice(0, 120),
+    createdAt: fb.createdAt, updatedAt: fb.updatedAt, contact: fb.contact || '',
+    user: fb.user || null, notified: !!fb.notified, emailSent: !!fb.emailSent,
+    attachment: fb.attachment ? fb.attachment.name : '',
+  };
+}
+async function fbSave(fb) {
+  await fbWriteJson(fbPath(fb.id), fb);
+  try {
+    const idx = await fbLoadIndex();
+    const item = fbIndexItem(fb);
+    const i = idx.items.findIndex((x) => x.id === fb.id);
+    if (i >= 0) idx.items[i] = item; else idx.items.unshift(item);
+    await fbSaveIndex(idx);
+  } catch (e) {
+    // 索引失败不影响反馈本体；列表会通过目录扫描兜底
+    console.warn('[feedback] 索引保存失败', e);
+  }
+}
+async function fbLoad(id) { return fbReadJson(fbPath(id)); }
+async function fbList() {
+  const idx = await fbLoadIndex();
+  const map = new Map(idx.items.map((x) => [x.id, x]));
+  try {
+    const keys = await listKeys(fbDir() + '/', false);
+    for (const k of keys) {
+      if (!k.endsWith('.json') || k.endsWith('/index.json')) continue;
+      const id = k.split('/').pop().replace(/\.json$/, '');
+      if (map.has(id)) continue;
+      try { map.set(id, fbIndexItem(await fbLoad(id))); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* 目录扫描失败则只用索引 */ }
+  return [...map.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+function fbSetMsg(t, kind) {
+  const el = $('fb-msg'); if (!el) return;
+  el.textContent = t || '';
+  el.style.color = kind === 'error' ? 'var(--danger)' : (kind === 'ok' ? 'var(--primary)' : (kind === 'warn' ? '#b26a00' : ''));
+}
+function fbDetailMsg(t, kind) {
+  const el = $('fb-detail-msg'); if (!el) return;
+  el.textContent = t || '';
+  el.style.color = kind === 'error' ? 'var(--danger)' : (kind === 'ok' ? 'var(--primary)' : '');
+}
+function fbNotifyMsg(t, kind) {
+  const el = $('fb-notify-msg'); if (!el) return;
+  el.textContent = t || '';
+  el.style.color = kind === 'error' ? 'var(--danger)' : (kind === 'ok' ? 'var(--primary)' : '');
+}
+function fbValidate(type, severity, desc, contact) {
+  if (!type) return '请选择问题类型';
+  if (!severity) return '请选择严重程度';
+  if (desc.length < 10) return '详细描述至少 10 个字';
+  if (desc.length > 2000) return '详细描述最多 2000 字';
+  if (contact) {
+    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phone = /^\+?[0-9][0-9\s-]{5,19}$/;
+    if (!email.test(contact) && !phone.test(contact)) return '联系方式格式不正确（请填邮箱或手机号）';
+  }
+  return '';
+}
+function fbRecentDuplicate(fp) {
+  try { const m = JSON.parse(localStorage.getItem('drive_fb_recent') || '{}'); return Date.now() - (m[fp] || 0) < 5 * 60 * 1000; }
+  catch (e) { return false; }
+}
+function fbMarkRecent(fp) {
+  try {
+    const m = JSON.parse(localStorage.getItem('drive_fb_recent') || '{}');
+    m[fp] = Date.now();
+    for (const k in m) if (Date.now() - m[k] > 86400000) delete m[k];
+    localStorage.setItem('drive_fb_recent', JSON.stringify(m));
+  } catch (e) { /* ignore */ }
+}
+function fbFileChanged() {
+  const inp = $('fb-file'); const info = $('fb-file-info');
+  const f = inp && inp.files && inp.files[0];
+  fbAttachmentFile = f || null;
+  if (!f) { info.textContent = ''; return; }
+  if (f.size > 10 * 1024 * 1024) { info.textContent = '附件不能超过 10MB'; fbAttachmentFile = null; inp.value = ''; return; }
+  const ok = /^(image\/|text\/|application\/pdf|application\/zip|application\/json)/.test(f.type) || /\.(png|jpe?g|gif|webp|txt|log|json|pdf|zip)$/i.test(f.name);
+  if (!ok) { info.textContent = '仅支持图片、文本、PDF、ZIP'; fbAttachmentFile = null; inp.value = ''; return; }
+  info.textContent = f.name + ' · ' + fmtSize(f.size);
+}
+// ---------- 反馈邮件直发（FormSubmit.co：免注册、免密钥，收件人直接嵌在地址里） ----------
+const FEEDBACK_EMAIL = 'mrhuangak@foxmail.com';
+function fbEmailEndpoint() {
+  // 默认直发到固定邮箱；高级用户可在「邮件通知设置」里覆盖为自建转发接口
+  try {
+    const cfg = JSON.parse(localStorage.getItem('drive_fb_email') || '{}');
+    if (cfg.endpoint && /^https?:\/\//i.test(cfg.endpoint)) return cfg.endpoint;
+  } catch (e) { /* ignore */ }
+  return 'https://formsubmit.co/ajax/' + FEEDBACK_EMAIL;
+}
+function fbEmailText(fb) {
+  return [
+    '【个人云盘 · 用户反馈】',
+    '────────────────────',
+    '反馈编号：' + fb.id,
+    '问题类型：' + (FB_TYPES[fb.type] || fb.type || '未填写'),
+    '严重程度：' + (FB_SEVS[fb.severity] || fb.severity || '未填写'),
+    '提交时间：' + (fb.createdAt ? new Date(fb.createdAt).toLocaleString('zh-CN') : ''),
+    '当前状态：' + (FB_STATUS[fb.status] || fb.status || '待处理'),
+    '────────────────────',
+    '【详细描述】',
+    String(fb.description || '（未填写）'),
+    '',
+    '【复现步骤】',
+    String(fb.steps || '（未填写）'),
+    '────────────────────',
+    '联系方式：' + (fb.contact || '未填写'),
+    '提交账号：' + ((fb.user && (fb.user.email || fb.user.id)) || '未登录'),
+    '附件：' + (fb.attachment ? (fb.attachment.name + '（' + fmtSize(fb.attachment.size) + '）') : '无'),
+    '应用版本：' + (fb.appVersion || ''),
+    '页面地址：' + (fb.pageUrl || ''),
+    '浏览器：' + (fb.userAgent || ''),
+  ].join('\n');
+}
+async function fbSendEmail(fb) {
+  let attach = '';
+  if (fb.attachment && fb.attachment.key) {
+    try {
+      const u = await createSignedUrlAny(fb.attachment.key, 3600);
+      attach = '\n附件下载链接（1 小时内有效）：' + u;
+    } catch (e) { /* 签名失败不影响正文发送 */ }
+  }
+  const subject = '[个人云盘反馈] ' + (FB_TYPES[fb.type] || fb.type) + ' / ' + (FB_SEVS[fb.severity] || fb.severity) + ' / ' + String(fb.id).slice(0, 8);
+  const payload = {
+    _subject: subject,
+    _replyto: (fb.contact && /@/.test(fb.contact)) ? fb.contact : FEEDBACK_EMAIL,
+    message: fbEmailText(fb) + attach,
+  };
+  try {
+    const resp = await fetch(fbEmailEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e2) { /* 非 JSON 响应也按状态码判断 */ }
+    if (!resp.ok || (data && data.success === false)) {
+      return { ok: false, reason: String((data && data.message) || ('HTTP ' + resp.status)) };
+    }
+    return { ok: true, message: (data && data.message) || 'Email has been sent' };
+  } catch (e) {
+    return { ok: false, reason: e.message || String(e) };
+  }
+}
+function fbGetNotify() {
+  if (meta.feedbackNotify && typeof meta.feedbackNotify.webhook === 'string') return meta.feedbackNotify;
+  try { return JSON.parse(localStorage.getItem('drive_fb_notify') || '{}'); } catch (e) { return {}; }
+}
+async function fbSaveNotify() {
+  const cfg = { channel: $('fb-channel').value, webhook: $('fb-webhook').value.trim() };
+  if (cfg.webhook && !/^https?:\/\//i.test(cfg.webhook)) { fbNotifyMsg('Webhook 需以 http(s):// 开头', 'error'); return; }
+  meta.feedbackNotify = cfg;
+  try { await saveMeta(); } catch (e) { /* 本地兜底 */ }
+  try { localStorage.setItem('drive_fb_notify', JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+  fbNotifyMsg(cfg.webhook ? '已保存通知设置' : '已保存（未填 Webhook，反馈只保存在收件箱）', 'ok');
+}
+async function fbNotify(fb) {
+  const cfg = fbGetNotify();
+  if (!cfg || !cfg.webhook) return { ok: false, reason: '未配置通知渠道' };
+  const summary = String(fb.description || '').slice(0, 120);
+  const time = new Date(fb.createdAt).toLocaleString('zh-CN');
+  const appUrl = location.origin + '/?feedback=' + encodeURIComponent(fb.id) + (SITE_CODE ? ('&sharecode=' + encodeURIComponent(SITE_CODE)) : '');
+  let signedDetail = '';
+  try { signedDetail = await createSignedUrlAny(fbPath(fb.id), 3600); } catch (e) { /* ignore */ }
+  let attachUrl = '';
+  if (fb.attachment && fb.attachment.key) { try { attachUrl = await createSignedUrlAny(fb.attachment.key, 3600); } catch (e) { /* ignore */ } }
+  const detailUrl = signedDetail || appUrl;
+  const text = [
+    '【用户反馈】' + (FB_TYPES[fb.type] || fb.type) + ' / ' + (FB_SEVS[fb.severity] || fb.severity),
+    '摘要：' + summary,
+    '时间：' + time,
+    '状态：待处理',
+    '账号：' + ((fb.user && (fb.user.email || fb.user.id)) || ''),
+    '联系方式：' + (fb.contact || '未填写'),
+    '查看详情：' + detailUrl,
+  ].join('\n');
+  let body;
+  const ch = cfg.channel || 'custom';
+  if (ch === 'wecom') body = { msgtype: 'markdown', markdown: { content: text } };
+  else if (ch === 'feishu') body = { msg_type: 'text', content: { text: text } };
+  else if (ch === 'slack') body = { text: text };
+  else if (ch === 'discord') body = { content: text };
+  else body = {
+    event: 'user_feedback', summary, time: fb.createdAt, severity: fb.severity,
+    type: fb.type, status: 'pending', user: fb.user, contact: fb.contact,
+    detailUrl, adminUrl: appUrl, attachmentUrl: attachUrl, feedback: fb,
+  };
+  try {
+    // no-cors：避免第三方 Webhook 的 CORS 预检；请求通常仍会送达
+    await fetch(cfg.webhook, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message || String(e) };
+  }
+}
+async function fbTestNotify() {
+  const cfg = fbGetNotify();
+  if (!cfg || !cfg.webhook) { fbNotifyMsg('请先填写并保存 Webhook 地址', 'error'); return; }
+  const sample = {
+    id: 'test-' + Date.now(), type: 'other', severity: 'medium',
+    description: '这是一条测试反馈通知，用于验证 Webhook 是否可用。', steps: '', contact: '',
+    attachment: null, status: 'pending', replies: [], createdAt: new Date().toISOString(),
+    user: { id: session.user.id, email: session.user.email || '' },
+  };
+  fbNotifyMsg('发送中…');
+  const n = await fbNotify(sample);
+  fbNotifyMsg(n.ok ? '测试通知已发送（若渠道支持）' : ('发送失败：' + (n.reason || '未知')), n.ok ? 'ok' : 'error');
+}
+async function fbSubmit() {
+  if (fbSubmitting) return;
+  const type = $('fb-type').value;
+  const severity = $('fb-severity').value;
+  const desc = $('fb-desc').value.trim();
+  const steps = $('fb-steps').value.trim();
+  const contact = $('fb-contact').value.trim();
+  const err = fbValidate(type, severity, desc, contact);
+  if (err) { fbSetMsg(err, 'error'); return; }
+  const fp = type + '|' + severity + '|' + desc.slice(0, 200);
+  if (fbRecentDuplicate(fp)) { fbSetMsg('相同内容刚刚已提交，请勿重复提交。', 'error'); return; }
+  fbSubmitting = true;
+  const btn = $('fb-submit'); btn.disabled = true;
+  fbSetMsg('正在提交…');
+  try {
+    const id = uid();
+    let attachment = null;
+    if (fbAttachmentFile) {
+      const key = fbAttPath(id, fbAttachmentFile.name);
+      await uploadPart(key, fbAttachmentFile);
+      attachment = { name: fbAttachmentFile.name, size: fbAttachmentFile.size, type: fbAttachmentFile.type || '', key };
+    }
+    const fb = {
+      id, type, severity, description: desc, steps, contact, attachment,
+      status: 'pending', replies: [],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      appVersion: APP_VERSION, pageUrl: location.href, userAgent: navigator.userAgent,
+      user: { id: session.user.id, email: session.user.email || '' },
+      notified: false, notifyError: '',
+    };
+    await fbSave(fb);
+    fbMarkRecent(fp);
+    // 主渠道：邮件直发固定邮箱，结果明确反馈给用户
+    fbSetMsg('正在发送邮件…');
+    const em = await fbSendEmail(fb);
+    fb.emailSent = !!em.ok; fb.emailError = em.reason || '';
+    // 补充渠道：Webhook 通知（可选，失败不影响邮件结果）
+    let n = { ok: false, reason: '未配置' };
+    try { n = await fbNotify(fb); } catch (e2) { n = { ok: false, reason: e2.message || String(e2) }; }
+    fb.notified = !!n.ok; fb.notifyError = n.reason || '';
+    try { await fbSave(fb); } catch (e2) { /* ignore */ }
+    fbResetForm();
+    if (em.ok) {
+      fbSetMsg('提交成功！反馈已保存，并发邮件至 ' + FEEDBACK_EMAIL + '。', 'ok');
+    } else {
+      fbSetMsg('反馈已保存，但邮件发送失败（' + (em.reason || '未知') + '）。可在「我的反馈」打开详情点「重新发送邮件」重试。', 'warn');
+    }
+    await fbRenderMine(); await fbRenderInbox();
+    fbSwitchTab('mine');
+  } catch (e) {
+    fbSetMsg('提交失败：' + (e.message || e) + '。表单内容已保留，请重试。', 'error');
+  } finally {
+    fbSubmitting = false; btn.disabled = false;
+  }
+}
+function fbResetForm() {
+  ['fb-type', 'fb-severity', 'fb-desc', 'fb-steps', 'fb-contact'].forEach((id) => { const el = $(id); if (el) el.value = ''; });
+  const f = $('fb-file'); if (f) f.value = '';
+  fbAttachmentFile = null;
+  const info = $('fb-file-info'); if (info) info.textContent = '';
+  const cnt = $('fb-desc-count'); if (cnt) cnt.textContent = '0 / 2000';
+}
+function fbStatusBadge(s) { return '<span class="fb-badge ' + esc(s) + '">' + esc(FB_STATUS[s] || s) + '</span>'; }
+function fbSevBadge(s) { return '<span class="fb-sev ' + esc(s) + '">' + esc(FB_SEVS[s] || s) + '</span>'; }
+function fbItemHtml(it) {
+  return '<div class="fb-item" data-id="' + esc(it.id) + '">' +
+    '<div class="fb-item-top">' + fbStatusBadge(it.status) + fbSevBadge(it.severity) +
+    '<span>' + esc(FB_TYPES[it.type] || it.type) + '</span>' +
+    (it.emailSent ? '<span class="fb-sev low">邮件已发</span>' : '<span class="fb-sev">邮件未发</span>') +
+    (it.notified ? '' : '<span class="fb-sev">未通知</span>') + '</div>' +
+    '<div class="fb-item-summary">' + esc(it.summary || '') + '</div>' +
+    '<div class="fb-item-meta"><span>' + esc(new Date(it.createdAt).toLocaleString('zh-CN')) + '</span>' +
+    (it.contact ? '<span>联系方式：' + esc(it.contact) + '</span>' : '') + '</div></div>';
+}
+async function fbRenderMine() {
+  const box = $('fb-mine-list'); if (!box) return;
+  box.innerHTML = '<p class="hint">加载中…</p>';
+  const items = await fbList();
+  const cnt = $('fb-mine-count'); if (cnt) cnt.textContent = items.length + ' 条';
+  box.innerHTML = items.length ? items.map(fbItemHtml).join('') : '<p class="hint">还没有反馈记录。</p>';
+  box.querySelectorAll('.fb-item').forEach((el) => { el.onclick = () => fbOpenDetail(el.dataset.id, 'mine'); });
+}
+async function fbRenderInbox() {
+  const box = $('fb-inbox-list'); if (!box) return;
+  const filter = ($('fb-filter') && $('fb-filter').value) || 'all';
+  box.innerHTML = '<p class="hint">加载中…</p>';
+  const all = await fbList();
+  const items = filter === 'all' ? all : all.filter((x) => x.status === filter);
+  const cnt = $('fb-inbox-count'); if (cnt) cnt.textContent = items.length + ' 条';
+  box.innerHTML = items.length ? items.map(fbItemHtml).join('') : '<p class="hint">没有符合条件的反馈。</p>';
+  box.querySelectorAll('.fb-item').forEach((el) => { el.onclick = () => fbOpenDetail(el.dataset.id, 'inbox'); });
+}
+async function fbOpenDetail(id, mode) {
+  fbCurrentId = id; fbCurrentMode = mode || 'mine';
+  ['fb-pane-submit', 'fb-pane-mine', 'fb-pane-inbox'].forEach((x) => { const el = $(x); if (el) el.classList.add('hidden'); });
+  const pane = $('fb-detail'); const body = $('fb-detail-body');
+  if (!pane || !body) return;
+  pane.classList.remove('hidden');
+  body.innerHTML = '<p class="hint">加载中…</p>';
+  try {
+    const fb = await fbLoad(id);
+    const isDev = localStorage.getItem('drive_developer') === '1' || fbCurrentMode === 'inbox';
+    const replies = (fb.replies || []).map((r) => '<div class="fb-reply-item"><div class="fb-k">' + esc(new Date(r.at).toLocaleString('zh-CN')) + ' · ' + esc(r.by || '开发者') + '</div><div>' + esc(r.text) + '</div></div>').join('');
+    body.innerHTML =
+      '<h4>' + esc(FB_TYPES[fb.type] || fb.type) + fbStatusBadge(fb.status) + fbSevBadge(fb.severity) + '</h4>' +
+      '<div><span class="fb-k">时间：</span>' + esc(new Date(fb.createdAt).toLocaleString('zh-CN')) + '</div>' +
+      '<div><span class="fb-k">账号：</span>' + esc((fb.user && (fb.user.email || fb.user.id)) || '') + '</div>' +
+      '<div><span class="fb-k">联系方式：</span>' + esc(fb.contact || '未填写') + '</div>' +
+      '<div><span class="fb-k">描述：</span><div>' + esc(fb.description || '') + '</div></div>' +
+      (fb.steps ? '<div><span class="fb-k">复现步骤：</span><pre style="white-space:pre-wrap;margin:4px 0;font-family:inherit">' + esc(fb.steps) + '</pre></div>' : '') +
+      (fb.attachment ? '<div><span class="fb-k">附件：</span><span id="fb-att">' + esc(fb.attachment.name) + '</span></div>' : '') +
+      '<div><span class="fb-k">邮件：</span>' + (fb.emailSent ? ('已发送至 ' + FEEDBACK_EMAIL) : ('未发送' + (fb.emailError ? '（' + esc(fb.emailError) + '）' : ''))) + '</div>' +
+      '<div><span class="fb-k">通知：</span>' + (fb.notified ? '已通知' : ('未通知' + (fb.notifyError ? '（' + esc(fb.notifyError) + '）' : ''))) + '</div>' +
+      (replies ? '<div><span class="fb-k">回复记录：</span>' + replies + '</div>' : '');
+    if (fb.attachment && fb.attachment.key) {
+      try {
+        const u = await createSignedUrlAny(fb.attachment.key, 3600);
+        const a = document.createElement('a');
+        a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.textContent = fb.attachment.name; a.className = 'btn small';
+        const slot = document.getElementById('fb-att'); if (slot) { slot.textContent = ''; slot.appendChild(a); }
+      } catch (e) { /* ignore */ }
+    }
+    const dev = $('fb-dev-actions'); if (dev) dev.style.display = isDev ? '' : 'none';
+    const back = $('fb-detail-back'); if (back) back.onclick = () => { pane.classList.add('hidden'); fbSwitchTab(fbCurrentMode === 'inbox' ? 'inbox' : 'mine'); };
+  } catch (e) {
+    body.innerHTML = '<p class="msg" style="color:var(--danger)">加载失败：' + esc(e.message || e) + '</p>';
+  }
+}
+async function fbSendReply() {
+  if (!fbCurrentId) return;
+  const text = ($('fb-reply') && $('fb-reply').value || '').trim();
+  if (!text) { fbDetailMsg('请输入回复内容', 'error'); return; }
+  try {
+    const fb = await fbLoad(fbCurrentId);
+    fb.replies = fb.replies || [];
+    fb.replies.push({ text, at: new Date().toISOString(), by: '开发者' });
+    fb.status = 'replied';
+    fb.updatedAt = new Date().toISOString();
+    await fbSave(fb);
+    if ($('fb-reply')) $('fb-reply').value = '';
+    fbDetailMsg('已回复', 'ok');
+    await fbOpenDetail(fbCurrentId, 'inbox');
+    await fbRenderInbox(); await fbRenderMine();
+  } catch (e) { fbDetailMsg('回复失败：' + (e.message || e), 'error'); }
+}
+async function fbSetStatus(status) {
+  if (!fbCurrentId) return;
+  try {
+    const fb = await fbLoad(fbCurrentId);
+    fb.status = status;
+    fb.updatedAt = new Date().toISOString();
+    await fbSave(fb);
+    fbDetailMsg('状态已更新为「' + (FB_STATUS[status] || status) + '」', 'ok');
+    await fbOpenDetail(fbCurrentId, 'inbox');
+    await fbRenderInbox(); await fbRenderMine();
+  } catch (e) { fbDetailMsg('更新失败：' + (e.message || e), 'error'); }
+}
+async function fbRenotify() {
+  if (!fbCurrentId) return;
+  try {
+    const fb = await fbLoad(fbCurrentId);
+    const n = await fbNotify(fb);
+    fb.notified = !!n.ok; fb.notifyError = n.reason || '';
+    await fbSave(fb);
+    fbDetailMsg(n.ok ? '已重新发送通知' : ('通知失败：' + (n.reason || '未知')), n.ok ? 'ok' : 'error');
+    await fbOpenDetail(fbCurrentId, 'inbox');
+  } catch (e) { fbDetailMsg('重新通知失败：' + (e.message || e), 'error'); }
+}
+async function fbResendEmail() {
+  if (!fbCurrentId) return;
+  fbDetailMsg('正在发送邮件…');
+  try {
+    const fb = await fbLoad(fbCurrentId);
+    const em = await fbSendEmail(fb);
+    fb.emailSent = !!em.ok; fb.emailError = em.reason || '';
+    await fbSave(fb);
+    fbDetailMsg(em.ok ? ('邮件已发送至 ' + FEEDBACK_EMAIL) : ('邮件发送失败：' + (em.reason || '未知')), em.ok ? 'ok' : 'error');
+    await fbOpenDetail(fbCurrentId, fbCurrentMode);
+  } catch (e) { fbDetailMsg('发送失败：' + (e.message || e), 'error'); }
+}
+function fbGetEmailCfg() {
+  try { return JSON.parse(localStorage.getItem('drive_fb_email') || '{}'); } catch (e) { return {}; }
+}
+function fbEmailMsg(t, kind) {
+  const el = $('fb-email-msg'); if (!el) return;
+  el.textContent = t || '';
+  el.style.color = kind === 'error' ? 'var(--danger)' : (kind === 'ok' ? 'var(--primary)' : '');
+}
+function fbSaveEmailCfg() {
+  const ep = (($('fb-email-endpoint') && $('fb-email-endpoint').value) || '').trim();
+  if (ep && !/^https?:\/\//i.test(ep)) { fbEmailMsg('自定义接口需以 http(s):// 开头', 'error'); return; }
+  try { localStorage.setItem('drive_fb_email', JSON.stringify({ endpoint: ep })); } catch (e) { /* ignore */ }
+  fbEmailMsg(ep ? '已保存自定义邮件接口。留空可恢复默认直发。' : ('已恢复默认：直发 ' + FEEDBACK_EMAIL), 'ok');
+}
+async function fbTestEmail() {
+  const sample = {
+    id: 'test-' + Date.now(), type: 'other', severity: 'medium',
+    description: '这是一封测试邮件，用于验证反馈邮件发送是否成功。',
+    steps: '无需复现，这是测试邮件。', contact: '', attachment: null,
+    status: 'pending', replies: [], createdAt: new Date().toISOString(),
+    appVersion: APP_VERSION, pageUrl: location.href, userAgent: navigator.userAgent,
+    user: { id: session.user.id, email: session.user.email || '' },
+  };
+  fbEmailMsg('发送中…');
+  const em = await fbSendEmail(sample);
+  fbEmailMsg(em.ok ? ('测试邮件已提交发送，请检查 ' + FEEDBACK_EMAIL + ' 收件箱（首次使用需确认激活）') : ('发送失败：' + (em.reason || '未知')), em.ok ? 'ok' : 'error');
+}
+function fbSwitchTab(tab) {
+  document.querySelectorAll('.fb-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  ['submit', 'mine', 'inbox'].forEach((t) => { const p = $('fb-pane-' + t); if (p) p.classList.toggle('hidden', t !== tab); });
+  const d = $('fb-detail'); if (d) d.classList.add('hidden');
+  if (tab === 'mine') fbRenderMine();
+  if (tab === 'inbox') fbRenderInbox();
+}
+function fbToggleDev(e) {
+  const on = !!(e.target && e.target.checked);
+  try { localStorage.setItem('drive_developer', on ? '1' : '0'); } catch (e2) { /* ignore */ }
+  const tab = $('fb-inbox-tab'); if (tab) tab.classList.toggle('hidden', !on);
+  if (!on && $('fb-pane-inbox') && !$('fb-pane-inbox').classList.contains('hidden')) fbSwitchTab('submit');
+}
+function openFeedback() {
+  const m = $('feedback-modal'); if (!m) return;
+  m.classList.remove('hidden');
+  const dev = (() => { try { return localStorage.getItem('drive_developer') === '1'; } catch (e) { return false; } })();
+  const tab = $('fb-inbox-tab'); if (tab) tab.classList.toggle('hidden', !dev);
+  const cb = $('fb-dev-mode'); if (cb) cb.checked = dev;
+  const cfg = fbGetNotify();
+  const ch = $('fb-channel'); if (ch && cfg.channel) ch.value = cfg.channel;
+  const wh = $('fb-webhook'); if (wh && cfg.webhook) wh.value = cfg.webhook;
+  const ep = $('fb-email-endpoint'); if (ep) ep.value = fbGetEmailCfg().endpoint || '';
+  fbSwitchTab(dev ? 'inbox' : 'submit');
+}
+
+$('btn-feedback') && ($('btn-feedback').onclick = openFeedback);
+$('feedback-close') && ($('feedback-close').onclick = () => $('feedback-modal').classList.add('hidden'));
+document.querySelectorAll('.fb-tab').forEach((b) => { b.onclick = () => fbSwitchTab(b.dataset.tab); });
+$('fb-submit') && ($('fb-submit').onclick = fbSubmit);
+$('fb-clear') && ($('fb-clear').onclick = fbResetForm);
+$('fb-desc') && ($('fb-desc').oninput = () => { const c = $('fb-desc-count'); if (c) c.textContent = $('fb-desc').value.length + ' / 2000'; });
+$('fb-file') && ($('fb-file').onchange = fbFileChanged);
+$('fb-save-notify') && ($('fb-save-notify').onclick = fbSaveNotify);
+$('fb-test-notify') && ($('fb-test-notify').onclick = fbTestNotify);
+$('fb-mine-refresh') && ($('fb-mine-refresh').onclick = fbRenderMine);
+$('fb-inbox-refresh') && ($('fb-inbox-refresh').onclick = fbRenderInbox);
+$('fb-filter') && ($('fb-filter').onchange = fbRenderInbox);
+$('fb-reply-send') && ($('fb-reply-send').onclick = fbSendReply);
+$('fb-mark-fixed') && ($('fb-mark-fixed').onclick = () => fbSetStatus('fixed'));
+$('fb-mark-pending') && ($('fb-mark-pending').onclick = () => fbSetStatus('pending'));
+$('fb-renotify') && ($('fb-renotify').onclick = fbRenotify);
+$('fb-resend-email') && ($('fb-resend-email').onclick = fbResendEmail);
+$('fb-save-email') && ($('fb-save-email').onclick = fbSaveEmailCfg);
+$('fb-test-email') && ($('fb-test-email').onclick = fbTestEmail);
+$('fb-dev-mode') && ($('fb-dev-mode').onchange = fbToggleDev);
+
 // ---------- 事件绑定 ----------
 $('tab-login').onclick = () => { $('tab-login').classList.add('active'); $('tab-signup').classList.remove('active'); $('login-form').classList.remove('hidden'); $('signup-form').classList.add('hidden'); $('forgot-form').classList.add('hidden'); };
 $('tab-signup').onclick = () => { $('tab-signup').classList.add('active'); $('tab-login').classList.remove('active'); $('signup-form').classList.remove('hidden'); $('login-form').classList.add('hidden'); $('forgot-form').classList.add('hidden'); };
@@ -2128,6 +2640,52 @@ window.__driveBridge = {
   config: () => window.RuntimeConfig.get(),
   nativeFs: () => window.NativeFs,
 };
+
+// ---------- Android 返回键：目录回退 / 根目录退出确认 ----------
+// Java 层（MainActivity）拦截返回键后调用 window.DriveBack.onBack()：
+// 有弹窗先关弹窗；在文件夹内退回上一级；在根目录（含登录/接收页）弹确认框。
+(function () {
+  const exitModal = document.getElementById('exit-modal');
+  function hideExit() { if (exitModal) exitModal.classList.add('hidden'); }
+  function showExit() {
+    if (!exitModal) {
+      if (confirm('确定要退出个人云盘吗？') && window.DriveBackBridge) window.DriveBackBridge.exitApp();
+      return;
+    }
+    exitModal.classList.remove('hidden');
+  }
+
+  const cancel = document.getElementById('exit-cancel');
+  const cancelX = document.getElementById('exit-cancel-x');
+  const confirmBtn = document.getElementById('exit-confirm');
+  if (cancel) cancel.onclick = hideExit;
+  if (cancelX) cancelX.onclick = hideExit;
+  if (confirmBtn) confirmBtn.onclick = function () {
+    hideExit();
+    if (window.DriveBackBridge && typeof window.DriveBackBridge.exitApp === 'function') {
+      window.DriveBackBridge.exitApp();
+    }
+  };
+  if (exitModal) exitModal.addEventListener('click', (e) => { if (e.target === exitModal) hideExit(); });
+
+  window.DriveBack = {
+    onBack: function () {
+      // 已打开的弹窗优先关闭，避免直接退出或回退目录
+      const open = document.querySelector('.modal:not(.hidden)');
+      if (open) { open.classList.add('hidden'); return 'modal'; }
+
+      const appView = document.getElementById('app-view');
+      if (appView && !appView.classList.contains('hidden') && currentFolderId != null) {
+        const folder = meta.folders.find((x) => x.id === currentFolderId);
+        currentFolderId = folder ? (folder.parent_id || null) : null;
+        render();
+        return 'up';
+      }
+      showExit();
+      return 'confirm';
+    },
+  };
+})();
 
 // 文件/文件夹卡片「⚡ 加速」入口：统一转发给加速器；未加载时静默回退到原生下载。
 function accelDownload(obj) {

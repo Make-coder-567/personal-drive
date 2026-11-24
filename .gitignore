@@ -54,5 +54,9 @@ electron-builder.yml.local
 
 # 发布构建临时目录
 release/github-pages/downloads/
+
+# 站点运行时生成物：dist 副本含生产 publishableKey / 站点码，禁止入库
+release/github-pages/app/
+release/github-pages/sw.js
 release/windows/store/win-unpacked/
 release/windows/store/builder-debug.yml

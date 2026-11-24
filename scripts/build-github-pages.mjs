@@ -10,6 +10,13 @@ const SRC_INDEX = resolve(ROOT, 'release', 'download', 'index.html');
 const OUT = resolve(ROOT, 'release', 'github-pages');
 const version = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).version;
 
+/** 网页版入口地址来自生产配置，避免在源码中硬编码站点域名与访问码。 */
+function readProductionUrl() {
+  const env = readFileSync(resolve(ROOT, '.env.production'), 'utf8');
+  const get = (key) => (env.match(new RegExp('^' + key + '=(.*)$', 'm')) || [])[1]?.trim() || '';
+  return `${get('VITE_SHARE_BASE_URL')}/app/?sharecode=${get('VITE_DEFAULT_SITE_CODE')}`;
+}
+
 function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
@@ -33,11 +40,21 @@ function main() {
   mkdirSync(OUT, { recursive: true });
   copyDir(resolve(ROOT, 'release', 'assets'), resolve(OUT, 'assets'));
 
+  // 「使用网页版」：把生产构建的网页应用放到同站 /app/ 子目录，与下载页共用同一个分享域名，
+  // 这样 OAuth Origin 与生产站点保持一致，云端登录不会被跨域拦截。
+  copyDir(resolve(ROOT, 'dist'), resolve(OUT, 'app'));
+  // 加速器通过 /__dl__/<token> 触发原生流式下载，要求 Service Worker 注册在站点根 scope；
+  // 因此把 sw.js 放到站点根，并把 /app/ 内的 swUrl 改为 ../sw.js。
+  copyFileSync(resolve(ROOT, 'dist', 'sw.js'), resolve(OUT, 'sw.js'));
+  const appConfig = resolve(OUT, 'app', '__config__.js');
+  writeFileSync(appConfig, readFileSync(appConfig, 'utf8').replace('"swUrl": "./sw.js"', '"swUrl": "../sw.js"'), 'utf8');
+
   let index = readFileSync(SRC_INDEX, 'utf8')
     .replaceAll('../assets/', 'assets/')
     .replaceAll('../PRIVACY-POLICY.html', 'PRIVACY-POLICY.html')
     .replaceAll('../TERMS-OF-USE.html', 'TERMS-OF-USE.html')
-    .replaceAll('../RELEASE-NOTES.html', 'RELEASE-NOTES.html');
+    .replaceAll('../RELEASE-NOTES.html', 'RELEASE-NOTES.html')
+    .replaceAll('{{WEB_APP_URL}}', readProductionUrl());
   writeFileSync(resolve(OUT, 'index.html'), index, 'utf8');
 
   copyIfExists(resolve(ROOT, 'release', 'PRIVACY-POLICY.html'), resolve(OUT, 'PRIVACY-POLICY.html'));
@@ -93,7 +110,7 @@ download.example.com
 `, 'utf8');
 
   console.log(`[pages] 已生成：${OUT}`);
-  console.log('[pages] 包含：index.html / PRIVACY-POLICY.html / TERMS-OF-USE.html / RELEASE-NOTES.html / assets / SHA256SUMS.txt / README.md');
+  console.log('[pages] 包含：index.html / app/（网页版）/ sw.js / PRIVACY-POLICY.html / TERMS-OF-USE.html / RELEASE-NOTES.html / assets / SHA256SUMS.txt / README.md');
 }
 
 try { main(); } catch (e) { console.error(`[pages] ${e.message}`); process.exitCode = 1; }

@@ -12,10 +12,13 @@
     body { margin:0; background:var(--bg); color:var(--text); font:14px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
     main { max-width:920px; margin:42px auto; padding:0 18px; }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px; box-shadow:0 8px 28px rgba(16,24,40,.06); }
-    .hero { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+    .hero { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
+    .hero-left { display:flex; align-items:center; gap:14px; }
     .logo { width:52px; height:52px; border-radius:13px; }
     h1 { margin:0; font-size:28px; }
     .sub { color:var(--muted); margin:0 0 20px; }
+    .web-entry { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 20px; }
+    .web-entry .hint { color:var(--muted); font-size:13px; }
     .notice { padding:11px 14px; border-radius:9px; margin:12px 0 18px; font-size:13px; }
     .notice.warn { background:var(--warn); border-left:4px solid var(--warn-border); }
     .notice.ok { background:var(--ok); border-left:4px solid var(--ok-border); }
@@ -26,6 +29,8 @@
     .tag.test { background:#fff1f0; color:#cf1322; }
     a.btn { display:inline-block; margin-top:10px; padding:9px 14px; border-radius:8px; background:var(--primary); color:#fff; text-decoration:none; }
     a.btn.secondary { background:#f0f2f5; color:var(--text); }
+    a.btn.web { margin-top:0; background:linear-gradient(135deg,#16a34a,#0e9f6e); box-shadow:0 4px 12px rgba(22,163,74,.25); font-weight:600; }
+    a.btn.web:hover { background:linear-gradient(135deg,#15803d,#0c8a60); }
     code { display:block; margin-top:10px; padding:8px; background:var(--bg); border-radius:6px; word-break:break-all; font-size:12px; color:var(--muted); }
     details { margin-top:16px; border-top:1px solid var(--border); padding-top:14px; }
     summary { cursor:pointer; color:var(--primary); font-weight:600; }
@@ -38,10 +43,16 @@
 <main>
   <div class="card">
     <div class="hero">
-      <img class="logo" src="https://raw.githubusercontent.com/Make-coder-567/personal-drive/main/release/assets/icon-192.png" alt="个人云盘图标" />
-      <div>
-        <h1>个人云盘</h1>
-        <p class="sub">版本 1.0.0 · 上传、管理、下载与分享你的文件</p>
+      <div class="hero-left">
+        <img class="logo" src="https://raw.githubusercontent.com/Make-coder-567/personal-drive/main/release/assets/icon-192.png" alt="个人云盘图标" />
+        <div>
+          <h1>个人云盘</h1>
+          <p class="sub" style="margin-bottom:0">版本 1.0.0 · 上传、管理、下载与分享你的文件</p>
+        </div>
+      </div>
+      <div class="web-entry">
+        <a class="btn web" href="https://personal-drive-52476.app.workbuddy.host/app/?sharecode=PBCKY4YAA5">使用网页版 →</a>
+        <span class="hint">无需安装，打开即用</span>
       </div>
     </div>
 
