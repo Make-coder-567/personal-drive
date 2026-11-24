@@ -1,3 +1,3 @@
-c72c837c76cef133dd4d1fc2c7f976de5346a37578fca9c5cd154beacca029bd  personal-drive-1.0.0-release.apk
-b6880a0d304020df31c4d375df12548d8b35e21134acc17c1399c22aa6421921  personal-drive-1.0.0-win-x64-setup-unsigned.exe
-92e8202045123fe8cf32cbaf90f0d30141615af35b93190e066e46a0cee134f5  personal-drive-1.0.0-win-x64-portable-unsigned.exe
+abeca16798f3ea1974c83fdf54e26a7ce497e5a52d118fc0dd5f0a298b05a2e4  personal-drive-1.0.0-release.apk
+f91dd650a51ce60d1b1e8a0c2f49c4577e960760f4c98e2dd360c2cc4b66767c  personal-drive-1.0.0-win-x64-setup-unsigned.exe
+9e863ce35ceaf115ce8f3a9a9c95e658825b909c6b7a835e4d71de3e9842a224  personal-drive-1.0.0-win-x64-portable-unsigned.exe
