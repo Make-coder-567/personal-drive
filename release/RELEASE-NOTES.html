@@ -21,7 +21,7 @@
 <main>
   <div class="card">
     <h1>个人云盘 1.0.0 发布说明</h1>
-    <p class="sub">构建时间：2026-11-22</p>
+    <p class="sub">构建时间：2026-11-24</p>
 
     <h2>版本信息</h2>
     <ul>
@@ -47,6 +47,9 @@
       <li>修复 Android WebView CORS 预检导致的旧文件不可见与上传失败；</li>
       <li>修复 Android 启动白屏与空错误浮层；</li>
       <li>修复 Windows 构建目录占用导致的 EPERM；</li>
+      <li>恢复三端「反馈」功能（提交、收件箱、邮件直发、Webhook 通知）；</li>
+      <li>Android 返回键改为目录逐级回退，根目录弹确认框；</li>
+      <li>下载站新增「使用网页版」入口、安装包链接内容指纹与 SHA-256 自动注入；</li>
       <li>完成三端统一配置注入与发布工程。</li>
     </ul>
 
@@ -61,10 +64,10 @@
     </table>
 
     <h2>校验值</h2>
-    <code>c72c837c76cef133dd4d1fc2c7f976de5346a37578fca9c5cd154beacca029bd  release/android/个人云盘-1.0.0-release.apk
-bf3591af2f0fdccf1e8de46503e6ff41182cfdfce39a0819b133ee9e837f2cb0  release/android/personal-drive-1.0.0-release.aab
-b6880a0d304020df31c4d375df12548d8b35e21134acc17c1399c22aa6421921  release/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe
-92e8202045123fe8cf32cbaf90f0d30141615af35b93190e066e46a0cee134f5  release/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe
+    <code>abeca16798f3ea1974c83fdf54e26a7ce497e5a52d118fc0dd5f0a298b05a2e4  release/android/个人云盘-1.0.0-release.apk
+62c25337343d00c3b470a39c6a37a735e51d48e475ab3053ae59a0e15145b09e  release/android/personal-drive-1.0.0-release.aab
+f91dd650a51ce60d1b1e8a0c2f49c4577e960760f4c98e2dd360c2cc4b66767c  release/windows/个人云盘-1.0.0-win-x64-setup-unsigned.exe
+9e863ce35ceaf115ce8f3a9a9c95e658825b909c6b7a835e4d71de3e9842a224  release/windows/个人云盘-1.0.0-win-x64-portable-unsigned.exe
 9808da221a897ab4b419bfea71999ba259ea7cb10418869868c2e5d081dd432e  release/windows/store/个人云盘-1.0.0-store-candidate.appx</code>
   </div>
 </main>

@@ -49,12 +49,23 @@ function main() {
   const appConfig = resolve(OUT, 'app', '__config__.js');
   writeFileSync(appConfig, readFileSync(appConfig, 'utf8').replace('"swUrl": "./sw.js"', '"swUrl": "../sw.js"'), 'utf8');
 
+  // 下载页展示的校验值随产物走，避免包更新后页面仍显示旧 SHA-256。
+  const sumsByName = new Map();
+  for (const [name, p] of [
+    [`personal-drive-${version}-release.apk`, resolve(ROOT, 'release', 'android', `个人云盘-${version}-release.apk`)],
+    [`personal-drive-${version}-win-x64-setup-unsigned.exe`, resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-setup-unsigned.exe`)],
+    [`personal-drive-${version}-win-x64-portable-unsigned.exe`, resolve(ROOT, 'release', 'windows', `个人云盘-${version}-win-x64-portable-unsigned.exe`)],
+  ]) {
+    if (existsSync(p)) sumsByName.set(name, sha256(p));
+  }
+
   let index = readFileSync(SRC_INDEX, 'utf8')
     .replaceAll('../assets/', 'assets/')
     .replaceAll('../PRIVACY-POLICY.html', 'PRIVACY-POLICY.html')
     .replaceAll('../TERMS-OF-USE.html', 'TERMS-OF-USE.html')
     .replaceAll('../RELEASE-NOTES.html', 'RELEASE-NOTES.html')
-    .replaceAll('{{WEB_APP_URL}}', readProductionUrl());
+    .replaceAll('{{WEB_APP_URL}}', readProductionUrl())
+    .replace(/\{\{SHA256:([^}]+)\}\}/g, (_, name) => sumsByName.get(name.trim()) || 'MISSING_SHA256');
   writeFileSync(resolve(OUT, 'index.html'), index, 'utf8');
 
   copyIfExists(resolve(ROOT, 'release', 'PRIVACY-POLICY.html'), resolve(OUT, 'PRIVACY-POLICY.html'));
