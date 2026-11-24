@@ -60,7 +60,6 @@ release/github-pages/app/
 release/github-pages/sw.js
 release/windows/store/win-unpacked/
 release/windows/store/builder-debug.yml
-*.gh_assets.json
 
 # GitHub API 临时响应文件
 .gh_*.json
